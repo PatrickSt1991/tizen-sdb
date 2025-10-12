@@ -82,33 +82,34 @@ jobs:
 
           if [[ "$RID" == win-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}.exe"
-            SOURCE_FILE=$(ls "${OUT_DIR}"/TizenSdb*.exe 2>/dev/null | head -1)
+            echo "Looking for executables in: $OUT_DIR"
+            ls -la "$OUT_DIR" || true
+            SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -iname "TizenSdb*.exe" -type f | head -1)
             if [ -z "$SOURCE_FILE" ]; then
-              echo "Error: Could not find TizenSdb*.exe in ${OUT_DIR}"
-              ls -la "${OUT_DIR}"
+              echo "Error: Could not find TizenSdb*.exe in $OUT_DIR"
               exit 1
             fi
-            cp "${SOURCE_FILE}" "${DEST_DIR}/${FINAL_NAME}"
+            cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
           elif [[ "$RID" == linux-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_linux"
-            SOURCE_FILE=$(find "${OUT_DIR}" -maxdepth 1 -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" ! -name "*.dbg" | head -1)
+            SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" ! -name "*.dbg" | head -1)
             if [ -z "$SOURCE_FILE" ]; then
-              echo "Error: Could not find TizenSdb binary in ${OUT_DIR}"
-              ls -la "${OUT_DIR}"
+              echo "Error: Could not find TizenSdb binary in $OUT_DIR"
+              ls -la "$OUT_DIR"
               exit 1
             fi
-            cp "${SOURCE_FILE}" "${DEST_DIR}/${FINAL_NAME}"
-            chmod +x "${DEST_DIR}/${FINAL_NAME}"
+            cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
+            chmod +x "$DEST_DIR/$FINAL_NAME"
           elif [[ "$RID" == osx-x64 ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_macos"
-            SOURCE_FILE=$(find "${OUT_DIR}" -maxdepth 1 -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" ! -name "*.dbg" | head -1)
+            SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" ! -name "*.dbg" | head -1)
             if [ -z "$SOURCE_FILE" ]; then
-              echo "Error: Could not find TizenSdb binary in ${OUT_DIR}"
-              ls -la "${OUT_DIR}"
+              echo "Error: Could not find TizenSdb binary in $OUT_DIR"
+              ls -la "$OUT_DIR"
               exit 1
             fi
-            cp "${SOURCE_FILE}" "${DEST_DIR}/${FINAL_NAME}"
-            chmod +x "${DEST_DIR}/${FINAL_NAME}"
+            cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
+            chmod +x "$DEST_DIR/$FINAL_NAME"
           fi
 
           echo "Final executable: $FINAL_NAME"
