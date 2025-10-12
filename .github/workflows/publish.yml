@@ -78,19 +78,18 @@ jobs:
           DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
           mkdir -p "$DEST_DIR"
 
-          EXE_NAME="TizenAppInstallerCli"
           VERSION="${{ steps.get_version.outputs.version }}"
 
           if [[ "$RID" == win-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}.exe"
-            cp "${OUT_DIR}/${EXE_NAME}.exe" "${DEST_DIR}/${FINAL_NAME}"
+            cp "${OUT_DIR}/TizenSdb.exe" "${DEST_DIR}/${FINAL_NAME}"
           elif [[ "$RID" == linux-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_linux"
-            cp "${OUT_DIR}/${EXE_NAME}" "${DEST_DIR}/${FINAL_NAME}"
+            cp "${OUT_DIR}/TizenSdb" "${DEST_DIR}/${FINAL_NAME}"
             chmod +x "${DEST_DIR}/${FINAL_NAME}"
           elif [[ "$RID" == osx-x64 ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_macos"
-            cp "${OUT_DIR}/${EXE_NAME}" "${DEST_DIR}/${FINAL_NAME}"
+            cp "${OUT_DIR}/TizenSdb" "${DEST_DIR}/${FINAL_NAME}"
             chmod +x "${DEST_DIR}/${FINAL_NAME}"
           fi
 
