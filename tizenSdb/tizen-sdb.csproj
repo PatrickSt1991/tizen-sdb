@@ -6,7 +6,6 @@
 		<Nullable>enable</Nullable>
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<PublishTrimmed>true</PublishTrimmed>
-		<PublishSingleFile>true</PublishSingleFile>
 		<PublishAot>true</PublishAot>
 		<TrimMode>partial</TrimMode>
 		<OptimizationPreference>Size</OptimizationPreference>
