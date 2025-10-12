@@ -16,7 +16,6 @@ permissions:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  PROJECT_DIR: 'tizenSdb'
   CSPROJ: 'tizenSdb/tizen-sdb.csproj'
   OUTPUT_BASE: ${{ github.workspace }}/artifacts
 
@@ -30,19 +29,26 @@ jobs:
         include:
           - rid: linux-x64
             runner: ubuntu-latest
-            asset_name: TizenSdb_linux
           - rid: win-x64
             runner: windows-latest
-            asset_name: TizenSdb.exe
           - rid: osx-x64
             runner: macos-latest
-            asset_name: TizenSdb_macos
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Get version for filename
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.ref }}" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="v0.0.0-placeholder"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Setup .NET ${{ env.DOTNET_VERSION }}
         uses: actions/setup-dotnet@v3
@@ -68,7 +74,7 @@ jobs:
           mkdir -p "$OUT"
           dotnet publish "${{ env.CSPROJ }}" -c Release -r $RID -p:PublishAot=true -p:PublishTrimmed=true --self-contained true -o "$OUT/publish" --no-restore
 
-      - name: Prepare single executable
+      - name: Prepare versioned executable
         shell: bash
         run: |
           set -e
@@ -78,75 +84,37 @@ jobs:
           mkdir -p "$DEST_DIR"
 
           EXE_NAME="TizenAppInstallerCli"
-          ASSET_NAME="${{ matrix.asset_name }}"
+          VERSION="${{ steps.get_version.outputs.version }}"
 
-          # Copy and rename executable based on platform
           if [[ "$RID" == win-* ]]; then
-            if [ -f "$OUT_DIR/${EXE_NAME}.exe" ]; then
-              cp "$OUT_DIR/${EXE_NAME}.exe" "$DEST_DIR/${ASSET_NAME}"
-            else
-              echo "ERROR: Executable not found in $OUT_DIR. Listing directory:"
-              ls -la "$OUT_DIR"
-              exit 2
-            fi
-          else
-            if [ -f "$OUT_DIR/${EXE_NAME}" ]; then
-              cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${ASSET_NAME}"
-              chmod +x "$DEST_DIR/${ASSET_NAME}"
-            else
-              echo "ERROR: Executable not found in $OUT_DIR. Listing directory:"
-              ls -la "$OUT_DIR"
-              exit 2
-            fi
+            FINAL_NAME="TizenSdb_${VERSION}.exe"
+            cp "$OUT_DIR/${EXE_NAME}.exe" "$DEST_DIR/${FINAL_NAME}"
+          elif [[ "$RID" == linux-* ]]; then
+            FINAL_NAME="TizenSdb_${VERSION}_linux"
+            cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${FINAL_NAME}"
+            chmod +x "$DEST_DIR/${FINAL_NAME}"
+          elif [[ "$RID" == osx-x64 ]]; then
+            FINAL_NAME="TizenSdb_${VERSION}_macos"
+            cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${FINAL_NAME}"
+            chmod +x "$DEST_DIR/${FINAL_NAME}"
+          elif [[ "$RID" == osx-arm64 ]]; then
+            FINAL_NAME="TizenSdb_${VERSION}_macos_arm64"
+            cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${FINAL_NAME}"
+            chmod +x "$DEST_DIR/${FINAL_NAME}"
           fi
 
-          # Copy SamsungCerts directory (if exists)
-          if [ -d "SamsungCerts" ]; then
-            cp -r "SamsungCerts" "$DEST_DIR/"
-          elif [ -d "$OUT_DIR/SamsungCerts" ]; then
-            cp -r "$OUT_DIR/SamsungCerts" "$DEST_DIR/"
-          else
-            echo "WARNING: SamsungCerts directory not found. Creating empty folder to keep structure consistent."
-            mkdir -p "$DEST_DIR/SamsungCerts"
-          fi
+          echo "Final executable: $FINAL_NAME"
 
-      - name: Create tar.gz for Unix systems
-        if: matrix.runner != 'windows-latest'
-        shell: bash
-        run: |
-          set -e
-          RID=${{ matrix.rid }}
-          DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
-          ASSET_NAME="${{ matrix.asset_name }}"
-          ARCHIVE_NAME="${ASSET_NAME}.tar.gz"
-          
-          (cd "$DEST_DIR" && tar -czf "../${ARCHIVE_NAME}" .)
-          echo "Created $ARCHIVE_NAME"
-
-      - name: Create zip for Windows
-        if: matrix.runner == 'windows-latest'
-        shell: bash
-        run: |
-          set -e
-          RID=${{ matrix.rid }}
-          DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
-          ASSET_NAME="${{ matrix.asset_name }}"
-          ARCHIVE_NAME="${ASSET_NAME}.zip"
-          
-          powershell -NoProfile -Command "Compress-Archive -Path '${DEST_DIR}\\*' -DestinationPath '${DEST_DIR}\\..\\${ARCHIVE_NAME}' -Force"
-          echo "Created $ARCHIVE_NAME"
-
-      - name: Upload artifact for release job
+      - name: Upload raw executables as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: ${{ env.OUTPUT_BASE }}/${{ matrix.rid }}/${{ matrix.asset_name }}.*
+          name: ${{ matrix.rid }}
+          path: ${{ env.OUTPUT_BASE }}/${{ matrix.rid }}/final/
 
   create_release:
-    name: Create draft release and attach zips
+    name: Create draft release and attach executables
     runs-on: ubuntu-latest
     needs: build
-    # Only run if this is a tag push or workflow_dispatch
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     
     steps:
@@ -161,20 +129,16 @@ jobs:
           set -e
           INPUT_TAG="${{ github.event.inputs.tag }}"
           
-          # If user provided a tag, use it
           if [ -n "$INPUT_TAG" ]; then
             echo "Using user-provided tag: $INPUT_TAG"
             NEXT_TAG="$INPUT_TAG"
           else
-            # For tag pushes, use the actual tag
             if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.ref }}" ]; then
               NEXT_TAG="${GITHUB_REF#refs/tags/}"
               echo "Using pushed tag: $NEXT_TAG"
             else
-              # For workflow_dispatch without tag input, auto-increment
               echo "Auto-incrementing version based on latest release..."
               
-              # Get the latest release tag
               LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
                 "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
                 grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
@@ -185,13 +149,11 @@ jobs:
               else
                 echo "Latest tag found: $LATEST_TAG"
                 
-                # Extract version numbers (remove 'v' prefix)
                 if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
                   MAJOR=${BASH_REMATCH[1]}
                   MINOR=${BASH_REMATCH[2]}
                   PATCH=${BASH_REMATCH[3]}
                   
-                  # Increment version
                   if [ "$PATCH" -lt 9 ]; then
                     PATCH=$((PATCH + 1))
                   else
@@ -207,7 +169,7 @@ jobs:
                   NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
                   echo "Incremented version: $LATEST_TAG -> $NEXT_TAG"
                 else
-                  echo "Warning: Latest tag '$LATEST_TAG' doesn't match semantic version pattern, using fallback"
+                  echo "Warning: Latest tag doesn't match semantic version pattern"
                   NEXT_TAG="v${{ github.run_number }}-${{ github.run_id }}"
                 fi
               fi
@@ -215,7 +177,18 @@ jobs:
           fi
           
           echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
-          echo "Using tag: $NEXT_TAG"
+
+      - name: Rename artifacts with final version
+        shell: bash
+        run: |
+          set -e
+          FINAL_VERSION="${{ steps.version.outputs.tag }}"
+          echo "Renaming artifacts to use final version: $FINAL_VERSION"
+          
+          find downloaded_artifacts -type f -name '*v0.0.0-placeholder*' -print0 | while IFS= read -r -d '' file; do
+            new_file=$(echo "$file" | sed "s/v0\.0\.0-placeholder/$FINAL_VERSION/g")
+            mv "$file" "$new_file"
+          done
 
       - name: Create a draft release
         id: create_release
@@ -228,22 +201,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets
+      - name: Upload release assets (raw executables)
         shell: bash
         run: |
           set -e
-          # get upload_url and strip the template part {?...}
           UPLOAD_URL_TEMPLATE="${{ steps.create_release.outputs.upload_url }}"
           UPLOAD_URL="${UPLOAD_URL_TEMPLATE%\{*}"
           echo "Base upload URL: $UPLOAD_URL"
 
-          # Upload all archive files
-          find downloaded_artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 | while IFS= read -r -d '' file; do
+          find downloaded_artifacts -type f \( -name 'TizenSdb_*' -o -name '*.exe' \) -print0 | while IFS= read -r -d '' file; do
             name=$(basename "$file")
             echo "Uploading $name ..."
+            
+            if [[ "$file" == *.exe ]]; then
+              CONTENT_TYPE="application/vnd.microsoft.portable-executable"
+            else
+              CONTENT_TYPE="application/octet-stream"
+            fi
+            
             curl --fail -sS -X POST \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: $(file -b --mime-type "$file")" \
+              -H "Content-Type: $CONTENT_TYPE" \
               --data-binary @"$file" \
               "${UPLOAD_URL}?name=$(printf '%s' "$name" | jq -s -R -r @uri)"
             echo "Uploaded $name"
