@@ -57,21 +57,23 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore (project + rid)
+        shell: bash
         run: |
           dotnet restore "${{ env.CSPROJ }}" -r "${{ matrix.rid }}"
 
       - name: Publish (AOT, self-contained) for ${{ matrix.rid }}
+        shell: bash
         run: |
-          $RID = "${{ matrix.rid }}"
-          $OUT = "${{ env.OUTPUT_BASE }}/$RID"
-          New-Item -ItemType Directory -Force -Path "$OUT" | Out-Null
+          RID="${{ matrix.rid }}"
+          OUT="${{ env.OUTPUT_BASE }}/${RID}"
+          mkdir -p "$OUT"
           dotnet publish "${{ env.CSPROJ }}" -c Release -r "$RID" -p:PublishAot=true -p:PublishTrimmed=true --self-contained true -o "$OUT/publish" --no-restore
 
       - name: Prepare versioned executable
         shell: bash
         run: |
           set -e
-          RID=${{ matrix.rid }}
+          RID="${{ matrix.rid }}"
           OUT_DIR="${{ env.OUTPUT_BASE }}/${RID}/publish"
           DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
           mkdir -p "$DEST_DIR"
@@ -81,19 +83,15 @@ jobs:
 
           if [[ "$RID" == win-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}.exe"
-            cp "$OUT_DIR/${EXE_NAME}.exe" "$DEST_DIR/${FINAL_NAME}"
+            cp "${OUT_DIR}/${EXE_NAME}.exe" "${DEST_DIR}/${FINAL_NAME}"
           elif [[ "$RID" == linux-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_linux"
-            cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${FINAL_NAME}"
-            chmod +x "$DEST_DIR/${FINAL_NAME}"
+            cp "${OUT_DIR}/${EXE_NAME}" "${DEST_DIR}/${FINAL_NAME}"
+            chmod +x "${DEST_DIR}/${FINAL_NAME}"
           elif [[ "$RID" == osx-x64 ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_macos"
-            cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${FINAL_NAME}"
-            chmod +x "$DEST_DIR/${FINAL_NAME}"
-          elif [[ "$RID" == osx-arm64 ]]; then
-            FINAL_NAME="TizenSdb_${VERSION}_macos_arm64"
-            cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${FINAL_NAME}"
-            chmod +x "$DEST_DIR/${FINAL_NAME}"
+            cp "${OUT_DIR}/${EXE_NAME}" "${DEST_DIR}/${FINAL_NAME}"
+            chmod +x "${DEST_DIR}/${FINAL_NAME}"
           fi
 
           echo "Final executable: $FINAL_NAME"
