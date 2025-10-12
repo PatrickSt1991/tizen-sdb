@@ -160,7 +160,7 @@ public static class Program
         try
         {
             var version = await device.ShellCommandAsync("host:version");
-            Console.WriteLine($"  Version: {version.Trim()}");
+            Console.WriteLine(version.Trim());
         }
         catch (Exception ex)
         {
@@ -178,8 +178,6 @@ public static class Program
 
     static async Task<string> GetDeviceUid(string ip)
     {
-        Console.WriteLine($"* Getting device UID from {ip}...");
-
         var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
         await device.ConnectAsync();
 
@@ -188,7 +186,7 @@ public static class Program
             var duid = await device.ShellCommandAsync("0 getduid");
             var cleanedDuid = duid.Trim();
 
-            Console.WriteLine($"  Device UID: {cleanedDuid}");
+            Console.WriteLine(cleanedDuid);
             return cleanedDuid;
         }
         catch (Exception ex)
