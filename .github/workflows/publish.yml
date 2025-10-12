@@ -82,14 +82,17 @@ jobs:
 
           if [[ "$RID" == win-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}.exe"
-            cp "${OUT_DIR}/TizenSdb.exe" "${DEST_DIR}/${FINAL_NAME}"
+            SOURCE_FILE=$(find "${OUT_DIR}" -name "TizenSdb*.exe" -type f | head -1)
+            cp "${SOURCE_FILE}" "${DEST_DIR}/${FINAL_NAME}"
           elif [[ "$RID" == linux-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_linux"
-            cp "${OUT_DIR}/TizenSdb" "${DEST_DIR}/${FINAL_NAME}"
+            SOURCE_FILE=$(find "${OUT_DIR}" -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" | head -1)
+            cp "${SOURCE_FILE}" "${DEST_DIR}/${FINAL_NAME}"
             chmod +x "${DEST_DIR}/${FINAL_NAME}"
           elif [[ "$RID" == osx-x64 ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_macos"
-            cp "${OUT_DIR}/TizenSdb" "${DEST_DIR}/${FINAL_NAME}"
+            SOURCE_FILE=$(find "${OUT_DIR}" -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" | head -1)
+            cp "${SOURCE_FILE}" "${DEST_DIR}/${FINAL_NAME}"
             chmod +x "${DEST_DIR}/${FINAL_NAME}"
           fi
 
