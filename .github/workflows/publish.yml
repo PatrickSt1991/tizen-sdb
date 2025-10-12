@@ -40,10 +40,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version for filename
+      - name: Get version from tag
         id: get_version
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.ref }}" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
           else
             VERSION="v0.0.0-placeholder"
@@ -57,22 +58,20 @@ jobs:
 
       - name: Restore (project + rid)
         shell: bash
-        working-directory: ${{ github.workspace }}
         run: |
           set -e
           RID=${{ matrix.rid }}
           echo "Running dotnet restore for RID=$RID on project ${{ env.CSPROJ }}"
-          dotnet restore "${{ env.CSPROJ }}" -r $RID
+          dotnet restore "${{ env.CSPROJ }}" -r "$RID"
 
       - name: Publish (AOT, self-contained) for ${{ matrix.rid }}
         shell: bash
-        working-directory: ${{ github.workspace }}
         run: |
           set -e
           RID=${{ matrix.rid }}
           OUT="${{ env.OUTPUT_BASE }}/${RID}"
           mkdir -p "$OUT"
-          dotnet publish "${{ env.CSPROJ }}" -c Release -r $RID -p:PublishAot=true -p:PublishTrimmed=true --self-contained true -o "$OUT/publish" --no-restore
+          dotnet publish "${{ env.CSPROJ }}" -c Release -r "$RID" -p:PublishAot=true -p:PublishTrimmed=true --self-contained true -o "$OUT/publish" --no-restore
 
       - name: Prepare versioned executable
         shell: bash
@@ -116,67 +115,56 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    
+
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./downloaded_artifacts
 
-      - name: Get latest release tag and increment version
+      - name: Get or generate release tag
         id: version
+        shell: bash
         run: |
           set -e
           INPUT_TAG="${{ github.event.inputs.tag }}"
-          
+
           if [ -n "$INPUT_TAG" ]; then
             echo "Using user-provided tag: $INPUT_TAG"
             NEXT_TAG="$INPUT_TAG"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            NEXT_TAG="${GITHUB_REF#refs/tags/}"
+            echo "Using pushed tag: $NEXT_TAG"
           else
-            if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.ref }}" ]; then
-              NEXT_TAG="${GITHUB_REF#refs/tags/}"
-              echo "Using pushed tag: $NEXT_TAG"
+            echo "Auto-incrementing version based on latest release..."
+
+            LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
+              grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+
+            if [ -z "$LATEST_TAG" ]; then
+              echo "No existing releases found, starting with v1.0.0"
+              NEXT_TAG="v1.0.0"
             else
-              echo "Auto-incrementing version based on latest release..."
-              
-              LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
-                grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
-              
-              if [ -z "$LATEST_TAG" ]; then
-                echo "No existing releases found, starting with v1.0.0"
-                NEXT_TAG="v1.0.0"
+              echo "Latest tag found: $LATEST_TAG"
+
+              if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                MAJOR=${BASH_REMATCH[1]}
+                MINOR=${BASH_REMATCH[2]}
+                PATCH=${BASH_REMATCH[3]}
+
+                PATCH=$((PATCH + 1))
+
+                NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+                echo "Incremented version: $LATEST_TAG -> $NEXT_TAG"
               else
-                echo "Latest tag found: $LATEST_TAG"
-                
-                if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-                  MAJOR=${BASH_REMATCH[1]}
-                  MINOR=${BASH_REMATCH[2]}
-                  PATCH=${BASH_REMATCH[3]}
-                  
-                  if [ "$PATCH" -lt 9 ]; then
-                    PATCH=$((PATCH + 1))
-                  else
-                    PATCH=0
-                    if [ "$MINOR" -lt 9 ]; then
-                      MINOR=$((MINOR + 1))
-                    else
-                      MINOR=0
-                      MAJOR=$((MAJOR + 1))
-                    fi
-                  fi
-                  
-                  NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
-                  echo "Incremented version: $LATEST_TAG -> $NEXT_TAG"
-                else
-                  echo "Warning: Latest tag doesn't match semantic version pattern"
-                  NEXT_TAG="v${{ github.run_number }}-${{ github.run_id }}"
-                fi
+                echo "Warning: Latest tag doesn't match semantic version pattern"
+                NEXT_TAG="v${{ github.run_number }}-${{ github.run_id }}"
               fi
             fi
           fi
-          
-          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Rename artifacts with final version
         shell: bash
@@ -184,7 +172,7 @@ jobs:
           set -e
           FINAL_VERSION="${{ steps.version.outputs.tag }}"
           echo "Renaming artifacts to use final version: $FINAL_VERSION"
-          
+
           find downloaded_artifacts -type f -name '*v0.0.0-placeholder*' -print0 | while IFS= read -r -d '' file; do
             new_file=$(echo "$file" | sed "s/v0\.0\.0-placeholder/$FINAL_VERSION/g")
             mv "$file" "$new_file"
@@ -201,28 +189,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets (raw executables)
+      - name: Upload release assets
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPLOAD_URL: ${{ steps.create_release.outputs.upload_url }}
         run: |
           set -e
-          UPLOAD_URL_TEMPLATE="${{ steps.create_release.outputs.upload_url }}"
+          UPLOAD_URL_TEMPLATE="${UPLOAD_URL}"
           UPLOAD_URL="${UPLOAD_URL_TEMPLATE%\{*}"
           echo "Base upload URL: $UPLOAD_URL"
 
-          find downloaded_artifacts -type f \( -name 'TizenSdb_*' -o -name '*.exe' \) -print0 | while IFS= read -r -d '' file; do
+          find downloaded_artifacts -type f \( -name 'TizenSdb_*' ! -name '*.md5' \) -print0 | while IFS= read -r -d '' file; do
             name=$(basename "$file")
             echo "Uploading $name ..."
-            
+
             if [[ "$file" == *.exe ]]; then
               CONTENT_TYPE="application/vnd.microsoft.portable-executable"
             else
               CONTENT_TYPE="application/octet-stream"
             fi
-            
+
             curl --fail -sS -X POST \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: $CONTENT_TYPE" \
-              --data-binary @"$file" \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Content-Type: ${CONTENT_TYPE}" \
+              --data-binary "@${file}" \
               "${UPLOAD_URL}?name=$(printf '%s' "$name" | jq -s -R -r @uri)"
             echo "Uploaded $name"
           done
