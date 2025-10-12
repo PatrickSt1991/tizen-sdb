@@ -82,14 +82,13 @@ jobs:
 
           if [[ "$RID" == win-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}.exe"
-            echo "Looking for executables in: $OUT_DIR"
-            ls -la "$OUT_DIR" || true
-            SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "*.exe" -type f | grep -v "\.pdb" | head -1)
+            SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "TizenSdb.exe" -type f | head -1)
             if [ -z "$SOURCE_FILE" ]; then
-              echo "Error: Could not find any .exe in $OUT_DIR"
+              echo "Error: Could not find TizenSdb.exe in $OUT_DIR"
+              echo "Contents of $OUT_DIR:"
+              ls -la "$OUT_DIR"
               exit 1
             fi
-            echo "Found executable: $SOURCE_FILE"
             cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
           elif [[ "$RID" == linux-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}_linux"
