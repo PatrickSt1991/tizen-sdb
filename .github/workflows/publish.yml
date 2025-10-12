@@ -15,11 +15,9 @@ permissions:
   contents: write
 
 env:
-  DOTNET_VERSION: '9.0.x'
-  # Set this to the folder that contains your .csproj (not the solution)
-  PROJECT_DIR: 'TizenAppInstallerCli'   # <-- IMPORTANT: update if your csproj is in a different path
-  # The path to csproj relative to repo root
-  CSPROJ: 'TizenAppInstallerCli/TizenAppInstallerCli.csproj'
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_DIR: 'tizenSdb'
+  CSPROJ: 'tizenSdb/tizen-sdb.csproj'
   OUTPUT_BASE: ${{ github.workspace }}/artifacts
 
 jobs:
@@ -32,16 +30,13 @@ jobs:
         include:
           - rid: linux-x64
             runner: ubuntu-latest
-            archive_name: TizenAppInstallerCli-linux-x64.zip
+            asset_name: TizenSdb_linux
           - rid: win-x64
             runner: windows-latest
-            archive_name: TizenAppInstallerCli-win-x64.zip
+            asset_name: TizenSdb.exe
           - rid: osx-x64
             runner: macos-latest
-            archive_name: TizenAppInstallerCli-osx-x64.zip
-          - rid: osx-arm64
-            runner: macos-latest
-            archive_name: TizenAppInstallerCli-osx-arm64.zip
+            asset_name: TizenSdb_macos
 
     steps:
       - name: Checkout
@@ -73,101 +68,167 @@ jobs:
           mkdir -p "$OUT"
           dotnet publish "${{ env.CSPROJ }}" -c Release -r $RID -p:PublishAot=true -p:PublishTrimmed=true --self-contained true -o "$OUT/publish" --no-restore
 
-      - name: Prepare packaging (collect executable + SamsungCerts)
+      - name: Prepare single executable
         shell: bash
         run: |
           set -e
           RID=${{ matrix.rid }}
           OUT_DIR="${{ env.OUTPUT_BASE }}/${RID}/publish"
-          PKG_DIR="${{ env.OUTPUT_BASE }}/${RID}/package"
-          mkdir -p "$PKG_DIR"
+          DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
+          mkdir -p "$DEST_DIR"
 
           EXE_NAME="TizenAppInstallerCli"
+          ASSET_NAME="${{ matrix.asset_name }}"
 
-          # Copy executable
-          if [ -f "$OUT_DIR/${EXE_NAME}" ]; then
-            cp "$OUT_DIR/${EXE_NAME}" "$PKG_DIR/"
-          elif [ -f "$OUT_DIR/${EXE_NAME}.exe" ]; then
-            cp "$OUT_DIR/${EXE_NAME}.exe" "$PKG_DIR/"
+          # Copy and rename executable based on platform
+          if [[ "$RID" == win-* ]]; then
+            if [ -f "$OUT_DIR/${EXE_NAME}.exe" ]; then
+              cp "$OUT_DIR/${EXE_NAME}.exe" "$DEST_DIR/${ASSET_NAME}"
+            else
+              echo "ERROR: Executable not found in $OUT_DIR. Listing directory:"
+              ls -la "$OUT_DIR"
+              exit 2
+            fi
           else
-            echo "ERROR: Executable not found in $OUT_DIR. Listing directory:"
-            ls -la "$OUT_DIR"
-            exit 2
+            if [ -f "$OUT_DIR/${EXE_NAME}" ]; then
+              cp "$OUT_DIR/${EXE_NAME}" "$DEST_DIR/${ASSET_NAME}"
+              chmod +x "$DEST_DIR/${ASSET_NAME}"
+            else
+              echo "ERROR: Executable not found in $OUT_DIR. Listing directory:"
+              ls -la "$OUT_DIR"
+              exit 2
+            fi
           fi
 
           # Copy SamsungCerts directory (if exists)
-          if [ -d "$OUT_DIR/SamsungCerts" ]; then
-            cp -r "$OUT_DIR/SamsungCerts" "$PKG_DIR/"
+          if [ -d "SamsungCerts" ]; then
+            cp -r "SamsungCerts" "$DEST_DIR/"
+          elif [ -d "$OUT_DIR/SamsungCerts" ]; then
+            cp -r "$OUT_DIR/SamsungCerts" "$DEST_DIR/"
           else
-            echo "WARNING: SamsungCerts directory not found in publish output. Creating empty folder to keep zip structure consistent."
-            mkdir -p "$PKG_DIR/SamsungCerts"
+            echo "WARNING: SamsungCerts directory not found. Creating empty folder to keep structure consistent."
+            mkdir -p "$DEST_DIR/SamsungCerts"
           fi
 
-      - name: Zip package
+      - name: Create tar.gz for Unix systems
+        if: matrix.runner != 'windows-latest'
         shell: bash
         run: |
           set -e
           RID=${{ matrix.rid }}
-          PKG_DIR="${{ env.OUTPUT_BASE }}/${RID}/package"
-          DEST="${{ env.OUTPUT_BASE }}/${{ matrix.archive_name }}"
-          rm -f "$DEST"
+          DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
+          ASSET_NAME="${{ matrix.asset_name }}"
+          ARCHIVE_NAME="${ASSET_NAME}.tar.gz"
+          
+          (cd "$DEST_DIR" && tar -czf "../${ARCHIVE_NAME}" .)
+          echo "Created $ARCHIVE_NAME"
 
-          if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
-            powershell -NoProfile -Command "Compress-Archive -Path '${PKG_DIR}\\*' -DestinationPath '${DEST}' -Force"
-          else
-            if ! command -v zip >/dev/null 2>&1; then
-              echo "zip missing; installing..."
-              if [[ "$(uname -s)" == "Darwin" ]]; then
-                brew install zip || true
-              else
-                sudo apt-get update && sudo apt-get install -y zip
-              fi
-            fi
-            (cd "$PKG_DIR" && zip -r -q "$DEST" .)
-          fi
-
-          echo "Produced $DEST"
+      - name: Create zip for Windows
+        if: matrix.runner == 'windows-latest'
+        shell: bash
+        run: |
+          set -e
+          RID=${{ matrix.rid }}
+          DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
+          ASSET_NAME="${{ matrix.asset_name }}"
+          ARCHIVE_NAME="${ASSET_NAME}.zip"
+          
+          powershell -NoProfile -Command "Compress-Archive -Path '${DEST_DIR}\\*' -DestinationPath '${DEST_DIR}\\..\\${ARCHIVE_NAME}' -Force"
+          echo "Created $ARCHIVE_NAME"
 
       - name: Upload artifact for release job
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.archive_name }}
-          path: ${{ env.OUTPUT_BASE }}/${{ matrix.archive_name }}
+          name: ${{ matrix.asset_name }}
+          path: ${{ env.OUTPUT_BASE }}/${{ matrix.rid }}/${{ matrix.asset_name }}.*
 
   create_release:
     name: Create draft release and attach zips
     runs-on: ubuntu-latest
     needs: build
+    # Only run if this is a tag push or workflow_dispatch
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./downloaded_artifacts
 
-      - name: Create tag if not provided, and determine tag name
-        id: tagger
+      - name: Get latest release tag and increment version
+        id: version
         run: |
           set -e
           INPUT_TAG="${{ github.event.inputs.tag }}"
+          
+          # If user provided a tag, use it
           if [ -n "$INPUT_TAG" ]; then
-            TAG="$INPUT_TAG"
+            echo "Using user-provided tag: $INPUT_TAG"
+            NEXT_TAG="$INPUT_TAG"
           else
-            TAG="v${{ github.run_number }}-${{ github.run_id }}"
+            # For tag pushes, use the actual tag
+            if [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.ref }}" ]; then
+              NEXT_TAG="${GITHUB_REF#refs/tags/}"
+              echo "Using pushed tag: $NEXT_TAG"
+            else
+              # For workflow_dispatch without tag input, auto-increment
+              echo "Auto-incrementing version based on latest release..."
+              
+              # Get the latest release tag
+              LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
+                grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+              
+              if [ -z "$LATEST_TAG" ]; then
+                echo "No existing releases found, starting with v1.0.0"
+                NEXT_TAG="v1.0.0"
+              else
+                echo "Latest tag found: $LATEST_TAG"
+                
+                # Extract version numbers (remove 'v' prefix)
+                if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                  MAJOR=${BASH_REMATCH[1]}
+                  MINOR=${BASH_REMATCH[2]}
+                  PATCH=${BASH_REMATCH[3]}
+                  
+                  # Increment version
+                  if [ "$PATCH" -lt 9 ]; then
+                    PATCH=$((PATCH + 1))
+                  else
+                    PATCH=0
+                    if [ "$MINOR" -lt 9 ]; then
+                      MINOR=$((MINOR + 1))
+                    else
+                      MINOR=0
+                      MAJOR=$((MAJOR + 1))
+                    fi
+                  fi
+                  
+                  NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+                  echo "Incremented version: $LATEST_TAG -> $NEXT_TAG"
+                else
+                  echo "Warning: Latest tag '$LATEST_TAG' doesn't match semantic version pattern, using fallback"
+                  NEXT_TAG="v${{ github.run_number }}-${{ github.run_id }}"
+                fi
+              fi
+            fi
           fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          
+          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using tag: $NEXT_TAG"
 
       - name: Create a draft release
         id: create_release
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ steps.tagger.outputs.tag }}
-          release_name: ${{ steps.tagger.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          release_name: ${{ steps.version.outputs.tag }}
           draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets (all zips)
+      - name: Upload release assets
         shell: bash
         run: |
           set -e
@@ -176,19 +237,18 @@ jobs:
           UPLOAD_URL="${UPLOAD_URL_TEMPLATE%\{*}"
           echo "Base upload URL: $UPLOAD_URL"
 
-          find downloaded_artifacts -type f -name '*.zip' -print0 | while IFS= read -r -d '' file; do
+          # Upload all archive files
+          find downloaded_artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 | while IFS= read -r -d '' file; do
             name=$(basename "$file")
             echo "Uploading $name ..."
             curl --fail -sS -X POST \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/zip" \
+              -H "Content-Type: $(file -b --mime-type "$file")" \
               --data-binary @"$file" \
               "${UPLOAD_URL}?name=$(printf '%s' "$name" | jq -s -R -r @uri)"
             echo "Uploaded $name"
           done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Show release URL
         run: |
-          echo "Draft release created: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tagger.outputs.tag }}"
+          echo "Draft release created: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
