@@ -1,13 +1,13 @@
-﻿    using System.IO.Compression;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-    using System.Security.Cryptography.X509Certificates;
-    using System.Security.Cryptography.Xml;
-    using System.Text;
-    using System.Xml;
+using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.Xml;
+using System.Text;
+using System.Xml;
 
-    namespace TizenSdb.SigningManager
-    {
+namespace TizenSdb.SigningManager
+{
     public static class TizenWgtSigner
     {
         public static async Task<string> ReSignWgtWithCertsInPlace(
@@ -24,14 +24,14 @@ using System.Security.Cryptography;
             if (!File.Exists(distributorPfxPath))
                 throw new FileNotFoundException("Distributor PFX not found.", distributorPfxPath);
 
-            // Load leaf certificates (ephemeral/private key in-memory)
-            var authorLeaf = LoadLeaf(authorPfxPath, password);
-            var distributorLeaf = LoadLeaf(distributorPfxPath, password);
+            // Load leaf certificates (private key accessible)
+            var authorLeaf = LoadCert(authorPfxPath, password);
+            var distributorLeaf = LoadCert(distributorPfxPath, password);
 
-            // Load full collections from PFX (leaf + intermediates)
-            var importFlags = X509KeyStorageFlags.DefaultKeySet;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                importFlags |= X509KeyStorageFlags.Exportable;
+            // Load full collections (leaf + intermediates)
+            var importFlags = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? X509KeyStorageFlags.Exportable
+                : X509KeyStorageFlags.DefaultKeySet;
 
             var authorColl = new X509Certificate2Collection();
             authorColl.Import(authorPfxPath, password, importFlags);
@@ -39,22 +39,19 @@ using System.Security.Cryptography;
             var distributorColl = new X509Certificate2Collection();
             distributorColl.Import(distributorPfxPath, password, importFlags);
 
-            byte[] bytes = await File.ReadAllBytesAsync(wgtPath).ConfigureAwait(false);
+            byte[] bytes = await File.ReadAllBytesAsync(wgtPath);
             await using var inMs = new MemoryStream(bytes, writable: false);
 
             var signedStream = await TizenResigner.ResignPackageAsync(
-                inMs, authorLeaf, authorColl, distributorLeaf, distributorColl).ConfigureAwait(false);
+                inMs, authorLeaf, authorColl, distributorLeaf, distributorColl);
 
             string tempSigned = Path.GetTempFileName();
             try
             {
                 await using (var outFs = File.Create(tempSigned))
-                    await signedStream.CopyToAsync(outFs).ConfigureAwait(false);
+                    await signedStream.CopyToAsync(outFs);
 
-                try
-                {
-                    File.Replace(tempSigned, wgtPath, backupPath);
-                }
+                try { File.Replace(tempSigned, wgtPath, backupPath); }
                 catch
                 {
                     if (File.Exists(wgtPath)) File.Delete(wgtPath);
@@ -63,36 +60,38 @@ using System.Security.Cryptography;
             }
             finally
             {
-                try { if (File.Exists(tempSigned)) File.Delete(tempSigned); } catch { }
+                if (File.Exists(tempSigned)) File.Delete(tempSigned);
             }
 
             return wgtPath;
         }
 
-        private static X509Certificate2 LoadLeaf(string pfxPath, string password)
+        private static X509Certificate2 LoadCert(string pfxPath, string password)
         {
-            // Base flags: ephemeral/private key only in memory
-            var flags = X509KeyStorageFlags.EphemeralKeySet;
-
-            // Only include Exportable on Windows
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                flags |= X509KeyStorageFlags.Exportable;
-
-            try
             {
-                return new X509Certificate2(pfxPath, password, flags);
+                try
+                {
+                    return new X509Certificate2(
+                        pfxPath, password,
+                        X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable);
+                }
+                catch
+                {
+                    // Fallback for older Windows
+                    return new X509Certificate2(
+                        pfxPath, password,
+                        X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+                }
             }
-            catch (CryptographicException)
+            else
             {
-                // Fallback for older Windows or environments without EphemeralKeySet support
-                var fallbackFlags = X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.PersistKeySet;
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    fallbackFlags |= X509KeyStorageFlags.Exportable;
-
-                return new X509Certificate2(pfxPath, password, fallbackFlags);
+                // macOS/Linux: just load in-memory
+                return new X509Certificate2(pfxPath, password);
             }
         }
     }
+    
     internal static class TizenResigner
         {
             internal record FileEntry(string RelativePath, byte[] Data);
