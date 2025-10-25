@@ -20,6 +20,22 @@ public class TizenInstaller
         _packageStream = File.OpenRead(_packagePath);
     }
 
+    public async Task PermitInstallApp()
+    {
+        if (string.IsNullOrEmpty(_packagePath))
+            throw new InvalidOperationException("XML path not set.");
+
+        string remotePath = "/home/developer/device-profile.xml";
+
+        await using var fs = File.OpenRead(_packagePath);
+
+        Console.WriteLine($"Pushing {_packagePath} to {remotePath}");
+
+        await _sdbClient.PushAsync(fs, remotePath);
+
+        Console.WriteLine("Push complete.");
+    }
+
     public async Task InstallApp()
     {
         if (string.IsNullOrEmpty(_packagePath))

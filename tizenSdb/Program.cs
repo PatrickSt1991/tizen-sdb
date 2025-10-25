@@ -92,6 +92,16 @@ public static class Program
                     await InstallPackage(commandArgs[0], commandArgs[1]);
                     break;
 
+                case "permit-install":
+                    if (commandArgs.Length != 2)
+                    {
+                        Console.WriteLine("Error: 'permit-install' requires a device IP and a XML file path.");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    await PermitInstall(commandArgs[0], commandArgs[1]);
+                    break;
+
                 case "uninstall":
                     if (commandArgs.Length != 2)
                     {
@@ -169,13 +179,11 @@ public static class Program
 
         device.DisposeAsync();
     }
-
     static async Task DisconnectDevice(string ip)
     {
         Console.WriteLine($"* Disconnected from {ip}");
         await Task.CompletedTask;
     }
-
     static async Task<string> GetDeviceUid(string ip)
     {
         var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
@@ -199,7 +207,6 @@ public static class Program
             device.DisposeAsync();
         }
     }
-
     static async Task ListApps(string ip)
     {
         Console.WriteLine($"* Listing installed apps on {ip}...");
@@ -275,7 +282,6 @@ public static class Program
 
         device.DisposeAsync();
     }
-
     static async Task InstallPackage(string ip, string packagePath)
     {
         if (!File.Exists(packagePath))
@@ -297,7 +303,27 @@ public static class Program
         Console.WriteLine("* Installation completed successfully");
         device.DisposeAsync();
     }
+    static async Task PermitInstall(string ip, string packagePath)
+    {
+        if (!File.Exists(packagePath))
+        {
+            Console.WriteLine($"Error: device-profile.xml file not found: {packagePath}");
+            Environment.Exit(1);
+            return;
+        }
 
+        Console.WriteLine($"* Pushing {Path.GetFileName(packagePath)} to {ip}...");
+
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        await device.ConnectAsync();
+
+        var installer = new TizenInstaller(packagePath, device);
+
+        await installer.PermitInstallApp();
+
+        Console.WriteLine("* Push completed successfully");
+        device.DisposeAsync();
+    }
     static async Task UninstallPackage(string ip, string packageId)
     {
         Console.WriteLine($"* Uninstalling {packageId} from {ip}...");
@@ -354,7 +380,6 @@ public static class Program
             device.DisposeAsync();
         }
     }
-
     static async Task DiagnoseDevice(string ip)
     {
         Console.WriteLine($"* Diagnosing device {ip}...");
@@ -399,7 +424,6 @@ public static class Program
 
         device.DisposeAsync();
     }
-
     static async Task ExecuteShellCommand(string ip, string command)
     {
         Console.WriteLine($"* Executing on {ip}: {command}");
@@ -414,7 +438,6 @@ public static class Program
         Console.WriteLine("----------------------");
         device.DisposeAsync();
     }
-
     static async Task GetCapability(string ip)
     {
         Console.WriteLine($"* Getting capabilities for {ip}...");
@@ -444,7 +467,6 @@ public static class Program
 
         device.DisposeAsync();
     }
-
     static async Task ResignPackage(string wgtPath, string authorP12, string distributorP12, string password)
     {
         try
@@ -466,20 +488,19 @@ public static class Program
             Environment.Exit(1);
         }
     }
-
-
     static void PrintUsage()
     {
-        Console.WriteLine("sdb-light.exe - Lightweight Tizen SDB Client");
-        Console.WriteLine("Usage: sdb-light.exe [command] [options]");
+        Console.WriteLine("TizenSdb - Lightweight Tizen SDB Client");
+        Console.WriteLine("Usage: TizenSdb_v*.*.*.exe [command] [options]");
         Console.WriteLine("\nCommands:");
         Console.WriteLine("  connect <device_ip>                           Connect to a Tizen device");
         Console.WriteLine("  disconnect <device_ip>                        Disconnect from a Tizen device");
-        Console.WriteLine("  diagnose <device_ip>                         Diagnose device connectivity and commands");
+        Console.WriteLine("  diagnose <device_ip>                          Diagnose device connectivity and commands");
         Console.WriteLine("  devices                                       List connected devices");
         Console.WriteLine("  apps <device_ip>                              List installed applications");
         Console.WriteLine("  duid <device_ip>                              Get device unique ID");
         Console.WriteLine("  install <device_ip> <path_to_tpk/wgt>         Install a package");
+        Console.WriteLine("  permit-install <device_ip> <path_to_xml>      Send device-profile.xml to device");
         Console.WriteLine("  uninstall <device_ip> <package_id>            Uninstall a package");
         Console.WriteLine("  shell <device_ip> <command>                   Execute a shell command on the device");
         Console.WriteLine("  capability <device_ip>                        Show device capabilities");
