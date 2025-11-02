@@ -1,4 +1,5 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
+using System.Text;
 using System.Xml.Linq;
 using TizenSdb.SdbClient;
 
@@ -26,13 +27,34 @@ public class TizenInstaller
             throw new InvalidOperationException("XML path not set.");
 
         string remotePath = "/home/developer/device-profile.xml";
+        string? remoteContent = null;
+
+        try
+        {
+            await using var ms = new MemoryStream();
+            await _sdbClient.PullAsync(remotePath, ms);
+            ms.Position = 0;
+
+            using var reader = new StreamReader(ms, Encoding.UTF8);
+            string content = await reader.ReadToEndAsync();
+            remoteContent = string.IsNullOrWhiteSpace(content) ? null : content;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Pull skipped or failed: {ex.Message}");
+        }
+
+        string localContent = await File.ReadAllTextAsync(_packagePath);
+
+        if (remoteContent != null && remoteContent == localContent)
+        {
+            Console.WriteLine("Remote device-profile.xml is identical. Skipping push.");
+            return;
+        }
 
         await using var fs = File.OpenRead(_packagePath);
-
-        Console.WriteLine($"Pushing {_packagePath} to {remotePath}");
-
+        Console.WriteLine($"⬆️  Pushing {_packagePath} to {remotePath}...");
         await _sdbClient.PushAsync(fs, remotePath);
-
         Console.WriteLine("Push complete.");
     }
 
@@ -57,8 +79,6 @@ public class TizenInstaller
             Console.WriteLine(line);
         }
     }
-
-
     private async Task<string> FindPackageId()
     {
         if (PackageId != null) return PackageId;

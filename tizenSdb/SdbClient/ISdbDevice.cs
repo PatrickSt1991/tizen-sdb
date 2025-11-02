@@ -10,4 +10,5 @@ public interface ISdbDevice : IAsyncDisposable
     Task<string> ShellCommandAsync(string command, CancellationToken ct = default);
     Task<Dictionary<string, string>> CapabilityAsync(CancellationToken ct = default);
     Task PushAsync(Stream localStream, string remotePath, IProgress<double>? progress = null, CancellationToken ct = default);
+    Task PullAsync(string remotePath, Stream localDestination, IProgress<double>? progress = null, CancellationToken ct = default);
 }

@@ -425,6 +425,47 @@ public class SdbTcpDevice : ISdbDevice
         await _transport.WriteFrameAsync(frame, ct).ConfigureAwait(false);
     }
 
+    public async Task PullAsync(string remotePath, Stream localDestination, IProgress<double>? progress = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(localDestination);
+        if (string.IsNullOrEmpty(remotePath)) throw new ArgumentNullException(nameof(remotePath));
+
+        await using SdbChannel ch = await OpenAsync("sync:\0", ct).ConfigureAwait(false);
+
+        // Build RECV request
+        byte[] pathBytes = Encoding.UTF8.GetBytes(remotePath);
+        await SendSyncPacketAsync(ch, Encoding.ASCII.GetBytes("RECV"), pathBytes, ct).ConfigureAwait(false);
+
+        long totalReceived = 0;
+
+        while (true)
+        {
+            (string id, byte[] payload) = await ReadSyncResponseAsync(ch, ct).ConfigureAwait(false);
+
+            switch (id)
+            {
+                case "DATA":
+                    await localDestination.WriteAsync(payload, ct).ConfigureAwait(false);
+                    totalReceived += payload.Length;
+                    progress?.Report(totalReceived);
+                    break;
+
+                case "DONE":
+                    // Transfer finished successfully
+                    await localDestination.FlushAsync(ct).ConfigureAwait(false);
+                    return;
+
+                case "FAIL":
+                    string msg = payload.Length > 0 ? Encoding.UTF8.GetString(payload) : "unknown";
+                    throw new InvalidOperationException($"sdb pull: FAIL: {msg}");
+
+                default:
+                    throw new InvalidDataException($"Unexpected sync response: {id}");
+            }
+        }
+    }
+
+
     private async Task PumpLoopAsync(CancellationToken ct)
     {
         ISdbFrameTransport? transport = _transport;
