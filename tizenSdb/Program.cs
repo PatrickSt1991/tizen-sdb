@@ -303,7 +303,7 @@ public static class Program
         Console.WriteLine("* Installation completed successfully");
         device.DisposeAsync();
     }
-    static async Task PermitInstall(string ip, string packagePath)
+    static async Task PermitInstall(string ip, string packagePath, string sdkToolPath)
     {
         if (!File.Exists(packagePath))
         {
@@ -312,14 +312,21 @@ public static class Program
             return;
         }
 
-        Console.WriteLine($"* Pushing {Path.GetFileName(packagePath)} to {ip}...");
+        if(string.IsNullOrEmpty(ip))
+        {
+            Console.WriteLine($"Error: IP is empty");
+            Environment.Exit(1);
+            return;
+        }
+
+        Console.WriteLine($"* Pushing {Path.GetFileName(packagePath)} to {ip} at location {sdkToolPath}...");
 
         var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
         await device.ConnectAsync();
 
         var installer = new TizenInstaller(packagePath, device);
 
-        await installer.PermitInstallApp();
+        await installer.PermitInstallApp(sdkToolPath);
 
         Console.WriteLine("* Push completed successfully");
         device.DisposeAsync();

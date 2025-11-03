@@ -21,12 +21,13 @@ public class TizenInstaller
         _packageStream = File.OpenRead(_packagePath);
     }
 
-    public async Task PermitInstallApp()
+    public async Task PermitInstallApp(string sdkToolPath)
     {
         if (string.IsNullOrEmpty(_packagePath))
             throw new InvalidOperationException("XML path not set.");
 
-        string remotePath = "/home/developer/device-profile.xml";
+
+        string remotePath = $"{sdkToolPath}/device-profile.xml";
         string? remoteContent = null;
 
         try
