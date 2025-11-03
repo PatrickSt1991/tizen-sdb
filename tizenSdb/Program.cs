@@ -93,13 +93,13 @@ public static class Program
                     break;
 
                 case "permit-install":
-                    if (commandArgs.Length != 2)
+                    if (commandArgs.Length != 3)
                     {
-                        Console.WriteLine("Error: 'permit-install' requires a device IP and a XML file path.");
+                        Console.WriteLine("Error: 'permit-install' requires a device IP, XML file path and SdkToolPath");
                         Environment.Exit(1);
                         return;
                     }
-                    await PermitInstall(commandArgs[0], commandArgs[1]);
+                    await PermitInstall(commandArgs[0], commandArgs[1], commandArgs[2]);
                     break;
 
                 case "uninstall":
