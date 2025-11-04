@@ -83,13 +83,13 @@ public static class Program
                     break;
 
                 case "install":
-                    if (commandArgs.Length != 2)
+                    if (commandArgs.Length != 3)
                     {
-                        Console.WriteLine("Error: 'install' requires a device IP and a TPK/WGT file path.");
+                        Console.WriteLine("Error: 'install' requires a device IP, TPK/WGT file path and SdkToolPath.");
                         Environment.Exit(1);
                         return;
                     }
-                    await InstallPackage(commandArgs[0], commandArgs[1]);
+                    await InstallPackage(commandArgs[0], commandArgs[1], commandArgs[2]);
                     break;
 
                 case "permit-install":
@@ -282,7 +282,7 @@ public static class Program
 
         device.DisposeAsync();
     }
-    static async Task InstallPackage(string ip, string packagePath)
+    static async Task InstallPackage(string ip, string packagePath, string sdkToolPath)
     {
         if (!File.Exists(packagePath))
         {
@@ -291,12 +291,12 @@ public static class Program
             return;
         }
 
-        Console.WriteLine($"* Installing {Path.GetFileName(packagePath)} on {ip}...");
+        Console.WriteLine($"* Installing {Path.GetFileName(packagePath)} on {ip} at location {sdkToolPath}...");
 
         var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
         await device.ConnectAsync();
 
-        var installer = new TizenInstaller(packagePath, device);
+        var installer = new TizenInstaller(packagePath, device, sdkToolPath);
 
         await installer.InstallApp();
 
@@ -324,9 +324,9 @@ public static class Program
         var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
         await device.ConnectAsync();
 
-        var installer = new TizenInstaller(packagePath, device);
+        var installer = new TizenInstaller(packagePath, device, sdkToolPath);
 
-        await installer.PermitInstallApp(sdkToolPath);
+        await installer.PermitInstallApp();
 
         Console.WriteLine("* Push completed successfully");
         device.DisposeAsync();

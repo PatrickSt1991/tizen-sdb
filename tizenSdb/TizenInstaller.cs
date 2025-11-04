@@ -8,26 +8,28 @@ namespace TizenSdb;
 public class TizenInstaller
 {
     private readonly string _packagePath;
+    private readonly string _sdkToolPath;
     private readonly SdbTcpDevice _sdbClient;
     private readonly Stream _packageStream;
-    private readonly Stream? _installStream = null;
 
     public string? PackageId { get; private set; }
 
-    public TizenInstaller(string packagePath, SdbTcpDevice sdbClient)
+    public TizenInstaller(string packagePath, SdbTcpDevice sdbClient, string sdkToolPath)
     {
         _packagePath = packagePath;
+        _sdkToolPath = sdkToolPath;
         _sdbClient = sdbClient;
         _packageStream = File.OpenRead(_packagePath);
+
     }
 
-    public async Task PermitInstallApp(string sdkToolPath)
+    public async Task PermitInstallApp()
     {
         if (string.IsNullOrEmpty(_packagePath))
             throw new InvalidOperationException("XML path not set.");
 
 
-        string remotePath = $"{sdkToolPath}/device-profile.xml";
+        string remotePath = $"{_sdkToolPath}/device-profile.xml";
         string? remoteContent = null;
 
         try
@@ -58,27 +60,20 @@ public class TizenInstaller
         await _sdbClient.PushAsync(fs, remotePath);
         Console.WriteLine("Push complete.");
     }
-
     public async Task InstallApp()
     {
         if (string.IsNullOrEmpty(_packagePath))
             throw new InvalidOperationException("Package path not set.");
 
-        string remotePath = $"/home/owner/share/tmp/sdk_tools/tmp/{Path.GetFileName(_packagePath)}";
+        string remotePath = $"{_sdkToolPath}/{Path.GetFileName(_packagePath)}";
 
-        // Find the package ID on the device
         string appId = await FindPackageId();
 
-        // Open package file as a stream and push it
         await using var fs = File.OpenRead(_packagePath);
         await _sdbClient.PushAsync(fs, remotePath);
 
-        // Install the app via shell command
         await foreach (string line in _sdbClient.ShellCommandLinesAsync($"0 vd_appinstall {appId} {remotePath}"))
-        {
-            // Optional logging:
             Console.WriteLine(line);
-        }
     }
     private async Task<string> FindPackageId()
     {
