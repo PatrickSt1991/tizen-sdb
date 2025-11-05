@@ -300,7 +300,6 @@ public static class Program
 
         await installer.InstallApp();
 
-        Console.WriteLine("* Installation completed successfully");
         device.DisposeAsync();
     }
     static async Task PermitInstall(string ip, string packagePath, string sdkToolPath)
@@ -353,7 +352,6 @@ public static class Program
                 throw new Exception("Uninstallation failed");
             }
 
-            Console.WriteLine("* Uninstallation completed successfully");
         }
         catch (Exception ex)
         {
