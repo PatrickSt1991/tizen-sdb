@@ -356,12 +356,13 @@ public static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"* Uninstallation failed: {ex.Message}");
-
             // Fallback: try pkgcmd if the TV-specific command fails
             try
             {
+                string[] packageIdParts = packageId.Split('.');
+
                 Console.WriteLine("* Trying fallback uninstall method...");
-                var fallbackResult = await device.ShellCommandAsync($"pkgcmd -u -n {packageId} -q");
+                var fallbackResult = await device.ShellCommandAsync($"pkgcmd -u -n {packageIdParts[0]} -q");
 
                 Console.WriteLine("--- Fallback Uninstall Output ---");
                 Console.WriteLine(fallbackResult);
