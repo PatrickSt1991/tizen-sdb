@@ -2,12 +2,17 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Numerics;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace TizenSdb.SdbClient;
 
 public class SdbTcpDevice : ISdbDevice
 {
+    private const uint AUTH_TOKEN = 1;
+    private const uint AUTH_SIGNATURE = 2;
+    private const uint AUTH_PUBLICKEY = 3;
     private const uint CLIENT_VERSION = 0x01000000;
     private const int SYNC_MAX_DATA = 64 * 1024;
     private readonly int _port;
@@ -44,7 +49,7 @@ public class SdbTcpDevice : ISdbDevice
         NetworkStream ns = _tcp.GetStream();
         _transport = new StreamSdbFrameTransport(ns, _tcp.Client.RemoteEndPoint, leaveOpen: false);
 
-        // send CNXN
+        // send initial CNXN
         byte[] banner = Encoding.UTF8.GetBytes("host::sdb-net-client");
         var cnxn = new SdbFrame
         {
@@ -55,28 +60,74 @@ public class SdbTcpDevice : ISdbDevice
         };
         await WriteFrameAsync(cnxn, ct).ConfigureAwait(false);
 
-        SdbFrame resp = await _transport.ReadFrameAsync(ct).ConfigureAwait(false);
+        using RSA rsa = LoadOrCreateKey();
 
-        if (resp.Command == SdbCommand.Auth)
+        while (true)
         {
-            throw new InvalidOperationException(
-                "Remote requested AUTH but client is configured to not perform authentication.");
+            SdbFrame resp = await _transport.ReadFrameAsync(ct).ConfigureAwait(false);
+
+            // Older / non-secure SDB: device replies CNXN directly
+            if (resp.Command == SdbCommand.Cnxn)
+            {
+                // read negotiated maxData from response Arg1
+                MaxData = Math.Min(MaxData, resp.Arg1 == 0 ? MaxData : resp.Arg1);
+
+                // set device id string from banner payload (if present)
+                DeviceId = resp.Payload.Length > 0 ? Encoding.UTF8.GetString(resp.Payload) : DeviceId;
+
+                // start the background pump to read frames and dispatch to channels
+                _pumpCts = new CancellationTokenSource();
+                _pumpTask = Task.Run(() => PumpLoopAsync(_pumpCts.Token), ct);
+                return;
+            }
+
+            // Newer / secure SDB: device first sends AUTH token / pubkey request
+            if (resp.Command != SdbCommand.Auth)
+            {
+                throw new InvalidDataException($"Expected CNXN or AUTH; got {resp.Command}");
+            }
+
+            uint authType = resp.Arg0;
+            byte[] token = resp.Payload ?? Array.Empty<byte>();
+
+            if (authType == AUTH_TOKEN)
+            {
+                // Sign the challenge token with our private key (RSA-SHA1, like ADB)
+                byte[] signature = rsa.SignData(token, HashAlgorithmName.SHA1, RSASignaturePadding.Pkcs1);
+
+                var authSignature = new SdbFrame
+                {
+                    Command = SdbCommand.Auth,
+                    Arg0 = AUTH_SIGNATURE,
+                    Arg1 = 0,
+                    Payload = signature
+                };
+
+                await WriteFrameAsync(authSignature, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            if (authType == AUTH_PUBLICKEY)
+            {
+                // Send our public key in Android's custom RSA pubkey format, base64 + user@host
+                byte[] pubkeyBlob = EncodePublicKey(rsa);
+                string userInfo = GetUserInfo();
+                string payloadString = Convert.ToBase64String(pubkeyBlob) + userInfo + "\0";
+
+                var authPubKey = new SdbFrame
+                {
+                    Command = SdbCommand.Auth,
+                    Arg0 = AUTH_PUBLICKEY,
+                    Arg1 = 0,
+                    Payload = Encoding.ASCII.GetBytes(payloadString)
+                };
+
+                await WriteFrameAsync(authPubKey, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            throw new InvalidOperationException($"Unknown AUTH type {authType}");
         }
-
-        if (resp.Command != SdbCommand.Cnxn)
-        {
-            throw new InvalidDataException($"Expected CNXN; got {resp.Command}");
-        }
-
-        // read negotiated maxData from response Arg1
-        MaxData = Math.Min(MaxData, resp.Arg1 == 0 ? MaxData : resp.Arg1);
-
-        // set device id string from banner payload (if present)
-        DeviceId = resp.Payload.Length > 0 ? Encoding.UTF8.GetString(resp.Payload) : DeviceId;
-
-        // start the background pump to read frames and dispatch to channels
-        _pumpCts = new CancellationTokenSource();
-        _pumpTask = Task.Run(() => PumpLoopAsync(_pumpCts.Token), ct);
     }
 
     public async Task DisconnectAsync()
@@ -640,6 +691,162 @@ public class SdbTcpDevice : ISdbDevice
                 c.EnqueueIncoming([]); // signal EOF
             }
         }
+    }
+
+    private static RSA LoadOrCreateKey()
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrEmpty(home))
+        {
+            home = ".";
+        }
+
+        // Cross-platform: ~/.sdb/adbkey
+        string dir = Path.Combine(home, ".sdb");
+        Directory.CreateDirectory(dir);
+
+        string privateKeyPath = Path.Combine(dir, "adbkey");
+
+        RSA rsa = RSA.Create();
+
+        if (File.Exists(privateKeyPath))
+        {
+            // Load existing PKCS#8 private key
+            byte[] pkcs8 = File.ReadAllBytes(privateKeyPath);
+            rsa.ImportPkcs8PrivateKey(pkcs8, out _);
+        }
+        else
+        {
+            // Generate a new 2048-bit RSA key and persist it
+            rsa = RSA.Create(2048);
+            byte[] pkcs8 = rsa.ExportPkcs8PrivateKey();
+            File.WriteAllBytes(privateKeyPath, pkcs8);
+        }
+
+        return rsa;
+    }
+
+    private static byte[] EncodePublicKey(RSA rsa)
+    {
+        // Android's custom RSA public key binary format (RSAPublicKey struct)
+        const int ANDROID_PUBKEY_MODULUS_SIZE = 2048 / 8; // 256 bytes
+        const int ANDROID_PUBKEY_MODULUS_SIZE_WORDS = ANDROID_PUBKEY_MODULUS_SIZE / 4;
+
+        RSAParameters pub = rsa.ExportParameters(false);
+        if (pub.Modulus == null || pub.Exponent == null)
+        {
+            throw new InvalidOperationException("RSA key does not contain modulus or exponent.");
+        }
+
+        // modulus is big-endian; we need little-endian 256 bytes
+        byte[] modulusLe = new byte[ANDROID_PUBKEY_MODULUS_SIZE];
+        byte[] modulusBe = pub.Modulus;
+        for (int i = 0; i < modulusBe.Length && i < ANDROID_PUBKEY_MODULUS_SIZE; i++)
+        {
+            modulusLe[i] = modulusBe[modulusBe.Length - 1 - i];
+        }
+
+        // exponent (usually 65537)
+        uint exponent = 0;
+        foreach (byte b in pub.Exponent)
+        {
+            exponent = (exponent << 8) | b;
+        }
+
+        // Compute n0inv and rr like adb does (using BigInteger)
+        BigInteger n = new BigInteger(modulusBe, isUnsigned: true, isBigEndian: true);
+        BigInteger r32 = BigInteger.One << 32;
+
+        BigInteger n0inv = n % r32;
+        n0inv = ModInverse(n0inv, r32);   // modular inverse of n0inv mod 2^32
+        n0inv = r32 - n0inv;
+
+        int rsaSizeBits = ANDROID_PUBKEY_MODULUS_SIZE * 8;
+        BigInteger rr = BigInteger.One << rsaSizeBits;
+        rr = BigInteger.ModPow(rr, 2, n);
+
+        // rr as little-endian 256 bytes
+        byte[] rrLe = new byte[ANDROID_PUBKEY_MODULUS_SIZE];
+        byte[] rrBytesLe = rr.ToByteArray(isUnsigned: true, isBigEndian: false);
+        Array.Copy(rrBytesLe, 0, rrLe, 0, Math.Min(rrBytesLe.Length, rrLe.Length));
+
+        byte[] buffer = new byte[4 + 4 + ANDROID_PUBKEY_MODULUS_SIZE + ANDROID_PUBKEY_MODULUS_SIZE + 4];
+        int offset = 0;
+
+        // modulus_size_words (uint32 LE)
+        BitConverter.GetBytes((uint)ANDROID_PUBKEY_MODULUS_SIZE_WORDS).CopyTo(buffer, offset);
+        offset += 4;
+
+        // n0inv (uint32 LE)
+        BitConverter.GetBytes((uint)n0inv).CopyTo(buffer, offset);
+        offset += 4;
+
+        // modulus[]
+        Array.Copy(modulusLe, 0, buffer, offset, ANDROID_PUBKEY_MODULUS_SIZE);
+        offset += ANDROID_PUBKEY_MODULUS_SIZE;
+
+        // rr[]
+        Array.Copy(rrLe, 0, buffer, offset, ANDROID_PUBKEY_MODULUS_SIZE);
+        offset += ANDROID_PUBKEY_MODULUS_SIZE;
+
+        // exponent (uint32 LE)
+        BitConverter.GetBytes(exponent).CopyTo(buffer, offset);
+
+        return buffer;
+    }
+
+    private static BigInteger ModInverse(BigInteger a, BigInteger modulus)
+    {
+        // Extended Euclidean algorithm
+        BigInteger t = 0;
+        BigInteger newT = 1;
+        BigInteger r = modulus;
+        BigInteger newR = a % modulus;
+
+        while (newR != 0)
+        {
+            BigInteger quotient = r / newR;
+            (t, newT) = (newT, t - quotient * newT);
+            (r, newR) = (newR, r - quotient * newR);
+        }
+
+        if (r > 1)
+        {
+            throw new ArgumentException("a is not invertible modulo modulus");
+        }
+
+        if (t < 0)
+        {
+            t += modulus;
+        }
+
+        return t;
+    }
+
+    private static string GetUserInfo()
+    {
+        string username = Environment.UserName;
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            username = "unknown";
+        }
+
+        string hostname;
+        try
+        {
+            hostname = Dns.GetHostName();
+        }
+        catch
+        {
+            hostname = "unknown";
+        }
+
+        if (string.IsNullOrWhiteSpace(hostname))
+        {
+            hostname = "unknown";
+        }
+
+        return " " + username + "@" + hostname;
     }
 
     private uint GetNextLocalId() => Interlocked.Increment(ref _nextLocalId);
