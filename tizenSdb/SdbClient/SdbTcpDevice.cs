@@ -26,9 +26,7 @@ public class SdbTcpDevice : ISdbDevice
     private readonly ConcurrentDictionary<uint, TaskCompletionSource<SdbChannel>> _pendingOpens = new();
 
     public string DeviceId { get; private set; }
-
     public IPAddress IpAddress { get; }
-
     public uint MaxData { get; private set; } = 4096; // negotiation fallback
 
     public SdbTcpDevice(IPAddress address, int port = 26101)
@@ -37,7 +35,6 @@ public class SdbTcpDevice : ISdbDevice
         _port = port;
         DeviceId = $"{IpAddress}:{_port}";
     }
-
     public async Task ConnectAsync(CancellationToken ct = default)
     {
         if (_transport != null) return; // already connected
@@ -129,7 +126,6 @@ public class SdbTcpDevice : ISdbDevice
             throw new InvalidOperationException($"Unknown AUTH type {authType}");
         }
     }
-
     public async Task DisconnectAsync()
     {
         try
@@ -153,14 +149,11 @@ public class SdbTcpDevice : ISdbDevice
         _tcp?.Dispose();
         _tcp = null;
     }
-
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync().ConfigureAwait(false);
         foreach (SdbChannel ch in _channelsByLocalId.Values) await ch.DisposeAsync().ConfigureAwait(false);
     }
-
-
     public async Task<SdbChannel> OpenAsync(string service, CancellationToken ct = default)
     {
         if (_transport == null) throw new InvalidOperationException("Not connected");
@@ -221,7 +214,6 @@ public class SdbTcpDevice : ISdbDevice
             throw;
         }
     }
-
     public async Task<int> ShellCommandAsync(string command, Stream output, CancellationToken ct = default)
     {
         await using SdbChannel ch = await OpenAsync($"shell:{command}\0", ct).ConfigureAwait(false);
@@ -238,7 +230,6 @@ public class SdbTcpDevice : ISdbDevice
 
         return total;
     }
-
     public async Task<string> ShellCommandAsync(string command, CancellationToken ct = default)
     {
         await using SdbChannel ch = await OpenAsync($"shell:{command}\0", ct).ConfigureAwait(false);
@@ -254,11 +245,7 @@ public class SdbTcpDevice : ISdbDevice
 
         return sb.ToString();
     }
-
-    public async IAsyncEnumerable<string> ShellCommandLinesAsync(
-        string command,
-        [System.Runtime.CompilerServices.EnumeratorCancellation]
-        CancellationToken ct = default)
+    public async IAsyncEnumerable<string> ShellCommandLinesAsync(string command, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         await using SdbChannel ch = await OpenAsync($"shell:{command}\0", ct).ConfigureAwait(false);
 
@@ -310,7 +297,6 @@ public class SdbTcpDevice : ISdbDevice
             foreach (string line in remaining) yield return line;
         }
     }
-
     public async Task<Dictionary<string, string>> CapabilityAsync(CancellationToken ct = default)
     {
         await using SdbChannel ch = await OpenAsync("capability:\0", ct).ConfigureAwait(false);
@@ -343,12 +329,7 @@ public class SdbTcpDevice : ISdbDevice
 
         return result;
     }
-
-    public async Task PushAsync(
-        Stream localStream,
-        string remotePath,
-        IProgress<double>? progress = null,
-        CancellationToken ct = default)
+    public async Task PushAsync(Stream localStream, string remotePath, IProgress<double>? progress = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(localStream);
         if (string.IsNullOrEmpty(remotePath)) throw new ArgumentNullException(nameof(remotePath));
@@ -406,9 +387,7 @@ public class SdbTcpDevice : ISdbDevice
             }
         }
     }
-
-    private static async Task SendSyncPacketAsync(SdbChannel ch, byte[] id4, ReadOnlyMemory<byte> payload,
-        CancellationToken ct)
+    private static async Task SendSyncPacketAsync(SdbChannel ch, byte[] id4, ReadOnlyMemory<byte> payload, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(id4);
         ArgumentNullException.ThrowIfNull(ch);
@@ -432,7 +411,6 @@ public class SdbTcpDevice : ISdbDevice
         payload.CopyTo(buf.AsMemory(8));
         await ch.WriteAsync(buf, ct).ConfigureAwait(false);
     }
-
     private static async Task<(string id, byte[] payload)> ReadSyncResponseAsync(SdbChannel ch, CancellationToken ct)
     {
         byte[] header = await ReadExactlyFromChannelAsync(ch, 8, ct).ConfigureAwait(false);
@@ -447,7 +425,6 @@ public class SdbTcpDevice : ISdbDevice
 
         return (id, payload);
     }
-
     private static async Task<byte[]> ReadExactlyFromChannelAsync(SdbChannel ch, int size, CancellationToken ct)
     {
         if (size == 0) return [];
@@ -469,13 +446,11 @@ public class SdbTcpDevice : ISdbDevice
 
         return result;
     }
-
     internal async Task WriteFrameAsync(SdbFrame frame, CancellationToken ct = default)
     {
         if (_transport == null) throw new InvalidOperationException("Not connected");
         await _transport.WriteFrameAsync(frame, ct).ConfigureAwait(false);
     }
-
     public async Task PullAsync(string remotePath, Stream localDestination, IProgress<double>? progress = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(localDestination);
@@ -515,8 +490,6 @@ public class SdbTcpDevice : ISdbDevice
             }
         }
     }
-
-
     private async Task PumpLoopAsync(CancellationToken ct)
     {
         ISdbFrameTransport? transport = _transport;
@@ -692,7 +665,6 @@ public class SdbTcpDevice : ISdbDevice
             }
         }
     }
-
     private static RSA LoadOrCreateKey()
     {
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -725,7 +697,6 @@ public class SdbTcpDevice : ISdbDevice
 
         return rsa;
     }
-
     private static byte[] EncodePublicKey(RSA rsa)
     {
         // Android's custom RSA public key binary format (RSAPublicKey struct)
@@ -794,7 +765,6 @@ public class SdbTcpDevice : ISdbDevice
 
         return buffer;
     }
-
     private static BigInteger ModInverse(BigInteger a, BigInteger modulus)
     {
         // Extended Euclidean algorithm
@@ -822,7 +792,6 @@ public class SdbTcpDevice : ISdbDevice
 
         return t;
     }
-
     private static string GetUserInfo()
     {
         string username = Environment.UserName;
@@ -848,6 +817,59 @@ public class SdbTcpDevice : ISdbDevice
 
         return " " + username + "@" + hostname;
     }
-
     private uint GetNextLocalId() => Interlocked.Increment(ref _nextLocalId);
+    public async IAsyncEnumerable<string> StreamShellLinesAsync(string command, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await using SdbChannel ch = await OpenAsync($"shell:{command}\0", ct).ConfigureAwait(false);
+
+        const int MaxChunk = 8192;
+        byte[] buffer = new byte[MaxChunk];
+        var decoder = Encoding.UTF8.GetDecoder();
+        var charBuf = new char[MaxChunk];
+        var sb = new StringBuilder();
+
+        while (!ct.IsCancellationRequested)
+        {
+            int read = await ch.ReadAsync(buffer, ct).ConfigureAwait(false);
+            if (read == 0)
+                break;
+
+            int chars = decoder.GetChars(buffer, 0, read, charBuf, 0, false);
+            if (chars > 0) sb.Append(charBuf, 0, chars);
+
+            int lastNewline = sb.ToString().LastIndexOf('\n');
+            if (lastNewline >= 0)
+            {
+                string block = sb.ToString(0, lastNewline + 1);
+                sb.Remove(0, lastNewline + 1);
+
+                foreach (string line in block.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                    yield return line;
+            }
+        }
+
+        int finalChars = decoder.GetChars([], 0, 0, charBuf, 0, true);
+        if (finalChars > 0) sb.Append(charBuf, 0, finalChars);
+
+        if (sb.Length > 0)
+        {
+            foreach (string line in sb.ToString().Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                yield return line;
+        }
+    }
+    public IAsyncEnumerable<string> StartDlogStreamAsync(
+        string? filter = null,
+        CancellationToken ct = default)
+    {
+        string cmd = "dlogutil -v time";
+
+        if (!string.IsNullOrWhiteSpace(filter))
+            cmd += $" | grep {filter}";
+
+        return StreamShellLinesAsync(cmd, ct);
+    }
+    public Task LaunchAppAsync(string appId, CancellationToken ct = default)
+    {
+        return ShellCommandAsync($"app_launcher -s {appId}", ct);
+    }
 }

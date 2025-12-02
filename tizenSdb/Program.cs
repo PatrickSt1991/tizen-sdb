@@ -22,6 +22,36 @@ public static class Program
         {
             switch (command)
             {
+                case "launch-logs":
+                    if (commandArgs.Length < 2 || commandArgs.Length > 3)
+                    {
+                        Console.WriteLine("Usage: launch-logs <device_ip> <app_id> [filter]");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    await LaunchAndStreamLogs(commandArgs[0], commandArgs[1], commandArgs.Length == 3 ? commandArgs[2] : null);
+                    break;
+
+                case "logs":
+                    if (commandArgs.Length < 1 || commandArgs.Length > 2)
+                    {
+                        Console.WriteLine("Error: 'logs' requires <device_ip> [filter]");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    await StreamLogs(commandArgs[0], commandArgs.Length == 2 ? commandArgs[1] : null);
+                    break;
+
+                case "launch":
+                    if (commandArgs.Length != 2)
+                    {
+                        Console.WriteLine("Error: 'launch' requires <device_ip> <app_id>");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    await LaunchApp(commandArgs[0], commandArgs[1]);
+                    break;
+
                 case "connect":
                     if (commandArgs.Length != 1)
                     {
@@ -473,6 +503,74 @@ public static class Program
 
         device.DisposeAsync();
     }
+    static async Task StreamLogs(string ip, string? filter)
+    {
+        Console.WriteLine($"* Connecting to {ip} for live logs...");
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        await device.ConnectAsync();
+
+        Console.WriteLine("* Streaming logs (press CTRL+C to stop)\n");
+
+        using var cts = new CancellationTokenSource();
+
+        Console.CancelKeyPress += (s, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        await foreach (var line in device.StartDlogStreamAsync(filter, cts.Token))
+        {
+            Console.WriteLine(line);
+        }
+
+        await device.DisposeAsync();
+    }
+    static async Task LaunchApp(string ip, string appId)
+    {
+        Console.WriteLine($"* Connecting to {ip}...");
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        await device.ConnectAsync();
+
+        Console.WriteLine($"* Launching app {appId}...");
+        await device.LaunchAppAsync(appId);
+
+        Console.WriteLine("✔ App launched.");
+        await device.DisposeAsync();
+    }
+    static async Task LaunchAndStreamLogs(string ip, string appId, string? filter)
+    {
+        Console.WriteLine($"* Connecting to {ip}...");
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        await device.ConnectAsync();
+
+        Console.WriteLine($"* Launching app {appId}...");
+        await device.LaunchAppAsync(appId);
+
+        Console.WriteLine("* Waiting for app to start...");
+        await Task.Delay(1500);   // allow WRT to initialize
+
+        Console.WriteLine("* Attaching to live logs (CTRL+C to stop)");
+        Console.WriteLine(filter != null ? $"* Filter: '{filter}'\n" : "");
+
+        using var cts = new CancellationTokenSource();
+
+        Console.CancelKeyPress += (s, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        await foreach (var line in device.StartDlogStreamAsync(filter, cts.Token))
+        {
+            Console.WriteLine(line);
+        }
+
+        Console.WriteLine("* Log stream stopped.");
+        await device.DisposeAsync();
+    }
+
+
     static async Task ResignPackage(string wgtPath, string authorP12, string distributorP12, string password)
     {
         try
