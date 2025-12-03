@@ -609,5 +609,8 @@ public static class Program
         Console.WriteLine("  shell <device_ip> <command>                   Execute a shell command on the device");
         Console.WriteLine("  capability <device_ip>                        Show device capabilities");
         Console.WriteLine("  resign <pkg_path> <author> <distrib> <pass>   Resign a TPK/WGT package");
+        Console.WriteLine("  launch-logs <device_ip> <app_id> [filter]     Launch app with dlog attatched (filter ex. jelly)");
+        Console.WriteLine("  logs <device_ip> [filter]                     Show current log (filter ex. jelly)");
+        Console.WriteLine("  launch <device_ip> <app_id>                   Start an app on the TV");
     }
 }
