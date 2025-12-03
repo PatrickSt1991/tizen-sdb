@@ -818,58 +818,12 @@ public class SdbTcpDevice : ISdbDevice
         return " " + username + "@" + hostname;
     }
     private uint GetNextLocalId() => Interlocked.Increment(ref _nextLocalId);
-    public async IAsyncEnumerable<string> StreamShellLinesAsync(string command, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async Task LaunchAppAsync(string appId, CancellationToken ct = default)
     {
-        await using SdbChannel ch = await OpenAsync($"shell:{command}\0", ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(appId))
+            throw new ArgumentException("appId is required", nameof(appId));
 
-        const int MaxChunk = 8192;
-        byte[] buffer = new byte[MaxChunk];
-        var decoder = Encoding.UTF8.GetDecoder();
-        var charBuf = new char[MaxChunk];
-        var sb = new StringBuilder();
 
-        while (!ct.IsCancellationRequested)
-        {
-            int read = await ch.ReadAsync(buffer, ct).ConfigureAwait(false);
-            if (read == 0)
-                break;
-
-            int chars = decoder.GetChars(buffer, 0, read, charBuf, 0, false);
-            if (chars > 0) sb.Append(charBuf, 0, chars);
-
-            int lastNewline = sb.ToString().LastIndexOf('\n');
-            if (lastNewline >= 0)
-            {
-                string block = sb.ToString(0, lastNewline + 1);
-                sb.Remove(0, lastNewline + 1);
-
-                foreach (string line in block.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-                    yield return line;
-            }
-        }
-
-        int finalChars = decoder.GetChars([], 0, 0, charBuf, 0, true);
-        if (finalChars > 0) sb.Append(charBuf, 0, finalChars);
-
-        if (sb.Length > 0)
-        {
-            foreach (string line in sb.ToString().Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-                yield return line;
-        }
-    }
-    public IAsyncEnumerable<string> StartDlogStreamAsync(
-        string? filter = null,
-        CancellationToken ct = default)
-    {
-        string cmd = "dlogutil -v time";
-
-        if (!string.IsNullOrWhiteSpace(filter))
-            cmd += $" | grep {filter}";
-
-        return StreamShellLinesAsync(cmd, ct);
-    }
-    public Task LaunchAppAsync(string appId, CancellationToken ct = default)
-    {
-        return ShellCommandAsync($"app_launcher -s {appId}", ct);
+        await ShellCommandAsync($"0 was_execute {appId}", ct);
     }
 }
