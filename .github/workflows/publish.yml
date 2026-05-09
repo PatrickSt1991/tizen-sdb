@@ -29,11 +29,12 @@ jobs:
         include:
           - rid: linux-x64
             runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
           - rid: win-x64
             runner: windows-latest
           - rid: osx-x64
             runner: macos-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,9 +78,7 @@ jobs:
           OUT_DIR="${{ env.OUTPUT_BASE }}/${RID}/publish"
           DEST_DIR="${{ env.OUTPUT_BASE }}/${RID}/final"
           mkdir -p "$DEST_DIR"
-
           VERSION="${{ steps.get_version.outputs.version }}"
-
           if [[ "$RID" == win-* ]]; then
             FINAL_NAME="TizenSdb_${VERSION}.exe"
             SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "TizenSdb.exe" -type f | head -1)
@@ -91,7 +90,7 @@ jobs:
             fi
             cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
           elif [[ "$RID" == linux-* ]]; then
-            FINAL_NAME="TizenSdb_${VERSION}_linux"
+            FINAL_NAME="TizenSdb_${VERSION}_${RID}"
             SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" ! -name "*.dbg" | head -1)
             if [ -z "$SOURCE_FILE" ]; then
               echo "Error: Could not find TizenSdb binary in $OUT_DIR"
@@ -111,7 +110,6 @@ jobs:
             cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
             chmod +x "$DEST_DIR/$FINAL_NAME"
           fi
-
           echo "Final executable: $FINAL_NAME"
 
       - name: Upload raw executables as artifacts
@@ -125,7 +123,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
@@ -138,7 +135,6 @@ jobs:
         run: |
           set -e
           INPUT_TAG="${{ github.event.inputs.tag }}"
-
           if [ -n "$INPUT_TAG" ]; then
             echo "Using user-provided tag: $INPUT_TAG"
             NEXT_TAG="$INPUT_TAG"
@@ -147,24 +143,19 @@ jobs:
             echo "Using pushed tag: $NEXT_TAG"
           else
             echo "Auto-incrementing version based on latest release..."
-
             LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
               grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
-
             if [ -z "$LATEST_TAG" ]; then
               echo "No existing releases found, starting with v1.0.0"
               NEXT_TAG="v1.0.0"
             else
               echo "Latest tag found: $LATEST_TAG"
-
               if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
                 MAJOR=${BASH_REMATCH[1]}
                 MINOR=${BASH_REMATCH[2]}
                 PATCH=${BASH_REMATCH[3]}
-
                 PATCH=$((PATCH + 1))
-
                 NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
                 echo "Incremented version: $LATEST_TAG -> $NEXT_TAG"
               else
@@ -173,7 +164,6 @@ jobs:
               fi
             fi
           fi
-
           echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Rename artifacts with final version
@@ -182,7 +172,6 @@ jobs:
           set -e
           FINAL_VERSION="${{ steps.version.outputs.tag }}"
           echo "Renaming artifacts to use final version: $FINAL_VERSION"
-
           find downloaded_artifacts -type f -name '*v0.0.0-placeholder*' -print0 | while IFS= read -r -d '' file; do
             new_file=$(echo "$file" | sed "s/v0\.0\.0-placeholder/$FINAL_VERSION/g")
             mv "$file" "$new_file"
@@ -209,17 +198,14 @@ jobs:
           UPLOAD_URL_TEMPLATE="${UPLOAD_URL}"
           UPLOAD_URL="${UPLOAD_URL_TEMPLATE%\{*}"
           echo "Base upload URL: $UPLOAD_URL"
-
           find downloaded_artifacts -type f \( -name 'TizenSdb_*' ! -name '*.md5' \) -print0 | while IFS= read -r -d '' file; do
             name=$(basename "$file")
             echo "Uploading $name ..."
-
             if [[ "$file" == *.exe ]]; then
               CONTENT_TYPE="application/vnd.microsoft.portable-executable"
             else
               CONTENT_TYPE="application/octet-stream"
             fi
-
             curl --fail -sS -X POST \
               -H "Authorization: token ${GITHUB_TOKEN}" \
               -H "Content-Type: ${CONTENT_TYPE}" \
