@@ -35,6 +35,10 @@ jobs:
             runner: windows-latest
           - rid: osx-x64
             runner: macos-latest
+          - rid: osx-x64
+            runner: macos-13
+          - rid: osx-arm64
+            runner: macos-14
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,7 +104,8 @@ jobs:
             cp "$SOURCE_FILE" "$DEST_DIR/$FINAL_NAME"
             chmod +x "$DEST_DIR/$FINAL_NAME"
           elif [[ "$RID" == osx-x64 ]]; then
-            FINAL_NAME="TizenSdb_${VERSION}_macos"
+            ARCH="${RID#osx-}"
+            FINAL_NAME="TizenSdb_${VERSION}_macos-${ARCH}"
             SOURCE_FILE=$(find "$OUT_DIR" -maxdepth 1 -name "TizenSdb*" -type f ! -name "*.exe" ! -name "*.pdb" ! -name "*.dbg" | head -1)
             if [ -z "$SOURCE_FILE" ]; then
               echo "Error: Could not find TizenSdb binary in $OUT_DIR"
