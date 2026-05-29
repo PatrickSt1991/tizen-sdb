@@ -36,7 +36,7 @@ jobs:
           - rid: osx-x64
             runner: macos-latest
           - rid: osx-x64
-            runner: macos-13
+            runner: macos-15-intel
           - rid: osx-arm64
             runner: macos-14
     steps:
