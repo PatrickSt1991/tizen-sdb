@@ -16,6 +16,6 @@
 	<ItemGroup>
 		<!-- Used only for XML canonicalization transforms (C14N) in TizenWgtSigner;
 		     the signature itself is plain RSA.SignData. Keep in sync with the TFM. -->
-		<PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.9" />
+		<PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.9" />
 	</ItemGroup>
 </Project>
