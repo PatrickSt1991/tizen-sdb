@@ -28,8 +28,10 @@ namespace TizenSdb.SigningManager
             var authorLeaf = LoadCert(authorPfxPath, password);
             var distributorLeaf = LoadCert(distributorPfxPath, password);
 
-            // Load full collections (leaf + intermediates)
-            var importFlags = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            // Load full collections (leaf + intermediates).
+            // Android (MonoVM) has no user/machine keystore, so load exportable/in-memory
+            // like Windows; DefaultKeySet is only right for desktop macOS/Linux.
+            var importFlags = (OperatingSystem.IsAndroid() || RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 ? X509KeyStorageFlags.Exportable
                 : X509KeyStorageFlags.DefaultKeySet;
 
@@ -68,6 +70,15 @@ namespace TizenSdb.SigningManager
 
         private static X509Certificate2 LoadCert(string pfxPath, string password)
         {
+            if (OperatingSystem.IsAndroid())
+            {
+                // Android (MonoVM): load in-memory only. PersistKeySet/UserKeySet
+                // (the desktop-Unix path) targets an OS keystore Android doesn't have.
+                return new X509Certificate2(
+                    pfxPath, password,
+                    X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable);
+            }
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 try

@@ -15,8 +15,8 @@ permissions:
   contents: write
 
 env:
-  DOTNET_VERSION: '8.0.x'
-  CSPROJ: 'tizenSdb/tizen-sdb.csproj'
+  DOTNET_VERSION: '9.0.x'
+  CSPROJ: 'src/TizenSdb.Cli/TizenSdb.Cli.csproj'
   OUTPUT_BASE: ${{ github.workspace }}/artifacts
 
 jobs:

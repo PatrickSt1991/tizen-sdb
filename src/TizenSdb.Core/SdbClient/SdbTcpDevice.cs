@@ -665,16 +665,32 @@ public class SdbTcpDevice : ISdbDevice
             }
         }
     }
+    /// <summary>
+    /// Directory the ADB-style auth key (adbkey) is stored in. Defaults to
+    /// <c>~/.sdb</c> (desktop/CLI). Mobile hosts have no user-profile dir, so they
+    /// set this to their app sandbox before the first connect, e.g.
+    /// <c>SdbTcpDevice.KeyDirectory = FileSystem.AppDataDirectory;</c> (MAUI).
+    /// </summary>
+    public static string? KeyDirectory { get; set; }
+
     private static RSA LoadOrCreateKey()
     {
-        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (string.IsNullOrEmpty(home))
+        string dir;
+        if (!string.IsNullOrEmpty(KeyDirectory))
         {
-            home = ".";
+            dir = KeyDirectory;
         }
+        else
+        {
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (string.IsNullOrEmpty(home))
+            {
+                home = ".";
+            }
 
-        // Cross-platform: ~/.sdb/adbkey
-        string dir = Path.Combine(home, ".sdb");
+            // Cross-platform default: ~/.sdb/adbkey
+            dir = Path.Combine(home, ".sdb");
+        }
         Directory.CreateDirectory(dir);
 
         string privateKeyPath = Path.Combine(dir, "adbkey");
