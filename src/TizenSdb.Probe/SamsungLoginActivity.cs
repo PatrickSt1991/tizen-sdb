@@ -39,6 +39,23 @@ public class SamsungLoginActivity : Activity
         var web = new WebView(this);
         web.Settings.JavaScriptEnabled = true;   // SignInGate needs JS
         web.Settings.DomStorageEnabled = true;
+        web.Settings.DatabaseEnabled = true;
+        web.Settings.JavaScriptCanOpenWindowsAutomatically = true;
+        web.Settings.SetSupportMultipleWindows(true);
+        // The final redirect goes to http://localhost from an https page — allow it.
+        web.Settings.MixedContentMode = MixedContentHandling.AlwaysAllow;
+        // Samsung's account pages behave badly under the default "; wv" WebView UA.
+        web.Settings.UserAgentString =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/126.0.0.0 Mobile Safari/537.36";
+
+        // Cross-domain login needs cookies, including third-party.
+        CookieManager.Instance!.SetAcceptCookie(true);
+        CookieManager.Instance.SetAcceptThirdPartyCookies(web, true);
+
+        // Surface load failures instead of the WebView's own error page.
+        web.SetWebViewClient(new LoggingClient(msg => OnResult?.Invoke(msg)));
+
         SetContentView(web);
 
         _ = Task.Run(() => ListenForCallbackAsync(_cts.Token));
@@ -156,5 +173,28 @@ public class SamsungLoginActivity : Activity
         _cts.Cancel();
         try { _listener?.Stop(); } catch { /* ignore */ }
         base.OnDestroy();
+    }
+
+    // Keeps navigation inside the WebView and reports load errors (so a failed
+    // page gives us the real reason instead of a generic error screen).
+    private sealed class LoggingClient(Action<string> log) : WebViewClient
+    {
+        public override bool ShouldOverrideUrlLoading(WebView? view, IWebResourceRequest? request)
+            => false; // let the WebView handle every navigation (incl. the localhost POST)
+
+        public override void OnReceivedError(WebView? view, IWebResourceRequest? request, WebResourceError? error)
+        {
+            // Only report main-frame failures, not every sub-resource.
+            if (request?.IsForMainFrame == true)
+                log($"⚠ load error {(int?)error?.ErrorCode}: {error?.Description} @ {request?.Url}");
+            base.OnReceivedError(view, request, error);
+        }
+
+        public override void OnReceivedHttpError(WebView? view, IWebResourceRequest? request, WebResourceResponse? errorResponse)
+        {
+            if (request?.IsForMainFrame == true)
+                log($"⚠ http {errorResponse?.StatusCode} @ {request?.Url}");
+            base.OnReceivedHttpError(view, request, errorResponse);
+        }
     }
 }
