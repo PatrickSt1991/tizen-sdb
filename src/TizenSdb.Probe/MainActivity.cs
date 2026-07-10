@@ -2,12 +2,23 @@ using Android.App;
 using Android.OS;
 using Android.Views;
 using Android.Widget;
+using Org.BouncyCastle.Asn1;
+using Org.BouncyCastle.Asn1.Pkcs;
+using Org.BouncyCastle.Asn1.X509;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Generators;
+using Org.BouncyCastle.Crypto.Operators;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Security;
+using Org.BouncyCastle.X509;
+using System.Collections;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using TizenSdb.SdbClient;
 using TizenSdb.SigningManager;
+using BcX509Extension = Org.BouncyCastle.Asn1.X509.X509Extension;
 
 namespace TizenSdb.Probe;
 
@@ -38,6 +49,7 @@ public class MainActivity : Activity
         root.AddView(MakeButton("1 — Connect (TCP + RSA AUTH)", RunConnect));
         root.AddView(MakeButton("2 — Capability", RunCapability));
         root.AddView(MakeButton("3 — Re-sign a .wgt (C14N + RSA, self-contained)", RunResign));
+        root.AddView(MakeButton("4 — Generate cert profile (BouncyCastle, self-contained)", RunGenerateProfile));
 
         _log = new TextView(this) { Text = string.Empty };
         _log.SetTextIsSelectable(true);
@@ -118,6 +130,65 @@ public class MainActivity : Activity
         Log(sigs.Count > 0
             ? $"✔ Re-sign OK — C14N + RSA on MonoVM works. Injected: {string.Join(", ", sigs)}"
             : "⚠ Re-signed but no signature entry found — inspect output");
+    }
+
+    // Self-contained cert-provisioning gate: runs the exact BouncyCastle steps the
+    // desktop cert flow uses (RSA keygen, author CSR, distributor CSR with DUID SANs,
+    // and a PKCS#12 export) on-device. Proves BouncyCastle works on Android/MonoVM.
+    // No Samsung account needed — a self-signed cert stands in for Samsung's signed one.
+    private Task RunGenerateProfile() => Task.Run(() =>
+    {
+        var dir = FilesDir!.AbsolutePath;
+
+        var kpg = new RsaKeyPairGenerator();
+        kpg.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
+        AsymmetricCipherKeyPair kp = kpg.GenerateKeyPair();
+        Log("✔ RSA 2048 keypair (BouncyCastle)");
+
+        // Author CSR
+        var authorSubject = new X509Name(new ArrayList { X509Name.CN }, new ArrayList { "Jelly2Sams" });
+        var authorCsr = new Pkcs10CertificationRequest("SHA256withRSA", authorSubject, kp.Public, null, kp.Private);
+        Log($"✔ Author CSR ({Pem(authorCsr).Length} B PEM)");
+
+        // Distributor CSR with one deviceid SAN per DUID (the DUID-lock)
+        var distSubject = new X509Name(
+            new ArrayList { X509Name.CN, X509Name.EmailAddress },
+            new ArrayList { "TizenSDK", "probe@example.com" });
+        var names = new List<GeneralName> { new(GeneralName.UniformResourceIdentifier, "URN:tizen:packageid=") };
+        foreach (var duid in new[] { "1234567890ABCDE", "FEDCBA9876543210" })
+            names.Add(new GeneralName(GeneralName.UniformResourceIdentifier, $"URN:tizen:deviceid={duid}"));
+        var ext = new X509Extensions(new Dictionary<DerObjectIdentifier, BcX509Extension>
+        {
+            { X509Extensions.SubjectAlternativeName, new BcX509Extension(false, new DerOctetString(new GeneralNames(names.ToArray()))) }
+        });
+        var attr = new AttributePkcs(PkcsObjectIdentifiers.Pkcs9AtExtensionRequest, new DerSet(ext));
+        var distCsr = new Pkcs10CertificationRequest("SHA256withRSA", distSubject, kp.Public, new DerSet(attr), kp.Private);
+        Log($"✔ Distributor CSR + 2 DUID SANs ({Pem(distCsr).Length} B PEM)");
+
+        // Self-sign a cert (stands in for Samsung's signed cert) and export a PKCS#12
+        var gen = new X509V3CertificateGenerator();
+        gen.SetSerialNumber(Org.BouncyCastle.Math.BigInteger.One);
+        gen.SetIssuerDN(authorSubject);
+        gen.SetSubjectDN(authorSubject);
+        gen.SetNotBefore(DateTime.UtcNow.AddDays(-1));
+        gen.SetNotAfter(DateTime.UtcNow.AddYears(1));
+        gen.SetPublicKey(kp.Public);
+        var cert = gen.Generate(new Asn1SignatureFactory("SHA256WithRSA", kp.Private, new SecureRandom()));
+
+        var store = new Pkcs12StoreBuilder().Build();
+        store.SetKeyEntry("author", new AsymmetricKeyEntry(kp.Private), new[] { new X509CertificateEntry(cert) });
+        var p12 = Path.Combine(dir, "provision-author.p12");
+        using (var fs = File.Create(p12))
+            store.Save(fs, "probe".ToCharArray(), new SecureRandom());
+
+        Log($"✔ Profile OK — BouncyCastle keygen + CSR + PKCS#12 work on MonoVM (p12 {new FileInfo(p12).Length} B)");
+    });
+
+    private static string Pem(object obj)
+    {
+        using var sw = new StringWriter();
+        new Org.BouncyCastle.OpenSsl.PemWriter(sw).WriteObject(obj);
+        return sw.ToString();
     }
 
     private static string MakeSelfSignedP12(string path, string password)
