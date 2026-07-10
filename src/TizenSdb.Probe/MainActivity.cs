@@ -28,8 +28,7 @@ public class MainActivity : Activity
         SdbTcpDevice.KeyDirectory = FilesDir!.AbsolutePath;
 
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        // Extra top padding clears the status bar (no action bar now).
-        root.SetPadding(24, 96, 24, 24);
+        root.SetPadding(24, 24, 24, 24);
 
         _ip = new EditText(this) { Hint = "TV IP e.g. 192.168.1.50" };
         root.AddView(_ip);
@@ -44,7 +43,24 @@ public class MainActivity : Activity
         root.AddView(scroll);
 
         SetContentView(root);
+
+        // Android 15+ (API 35+) is edge-to-edge by default: the status/nav bars
+        // draw over the content. Pad the root by the actual system-bar insets so
+        // nothing is hidden behind them (a fixed padding can't do this reliably).
+        root.SetOnApplyWindowInsetsListener(new InsetPadder());
+        root.RequestApplyInsets();
+
         Log($"Ready. Key dir: {SdbTcpDevice.KeyDirectory}");
+    }
+
+    private sealed class InsetPadder : Java.Lang.Object, View.IOnApplyWindowInsetsListener
+    {
+        public WindowInsets? OnApplyWindowInsets(View v, WindowInsets insets)
+        {
+            var bars = insets.GetInsets(WindowInsets.Type.SystemBars());
+            v.SetPadding(bars.Left + 24, bars.Top + 24, bars.Right + 24, bars.Bottom + 24);
+            return insets;
+        }
     }
 
     private Button MakeButton(string text, Func<Task> action)
