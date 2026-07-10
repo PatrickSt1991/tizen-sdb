@@ -50,6 +50,7 @@ public class MainActivity : Activity
         root.AddView(MakeButton("2 — Capability", RunCapability));
         root.AddView(MakeButton("3 — Re-sign a .wgt (C14N + RSA, self-contained)", RunResign));
         root.AddView(MakeButton("4 — Generate cert profile (BouncyCastle, self-contained)", RunGenerateProfile));
+        root.AddView(MakeButton("5 — Samsung login (WebView + loopback)", RunSamsungLogin));
 
         _log = new TextView(this) { Text = string.Empty };
         _log.SetTextIsSelectable(true);
@@ -183,6 +184,20 @@ public class MainActivity : Activity
 
         Log($"✔ Profile OK — BouncyCastle keygen + CSR + PKCS#12 work on MonoVM (p12 {new FileInfo(p12).Length} B)");
     });
+
+    // Launches the WebView + loopback-listener login; logs the captured token.
+    private Task RunSamsungLogin()
+    {
+        SamsungLoginActivity.OnResult = result =>
+        {
+            if (result.StartsWith("ERROR:", StringComparison.Ordinal))
+                Log("✖ Samsung login: " + result);
+            else
+                Log($"✔ Samsung login OK — token captured ({result.Length} chars): {result[..Math.Min(48, result.Length)]}…");
+        };
+        StartActivity(new global::Android.Content.Intent(this, typeof(SamsungLoginActivity)));
+        return Task.CompletedTask;
+    }
 
     private static string Pem(object obj)
     {
