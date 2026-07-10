@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="tizenSdb/tizen-sdb.csproj" />
+  <Project Path="src/TizenSdb.Core/TizenSdb.Core.csproj" />
+  <Project Path="src/TizenSdb.Cli/TizenSdb.Cli.csproj" />
+  <Project Path="src/TizenSdb.Probe/TizenSdb.Probe.csproj" />
 </Solution>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<!-- Portable engine: builds for desktop hosts (CLI, Apps2Samsung) and the
+		     Android MAUI head. Add net9.0-ios later for the iOS head (Appendix B). -->
+		<TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<RootNamespace>TizenSdb</RootNamespace>
+		<AssemblyName>TizenSdb.Core</AssemblyName>
+		<!-- No AOT/trim/RID/OutputType here: those are CLI-publish concerns, not a
+		     reusable library's. WarningsAsErrors is also intentionally dropped — it
+		     belongs on the app, and would turn Android CA1416 platform warnings into
+		     build errors. -->
+	</PropertyGroup>
+	<ItemGroup>
+		<!-- Used only for XML canonicalization transforms (C14N) in TizenWgtSigner;
+		     the signature itself is plain RSA.SignData. Keep in sync with the TFM. -->
+		<PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.9" />
+	</ItemGroup>
+</Project>
