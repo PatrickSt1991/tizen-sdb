@@ -13,7 +13,8 @@ namespace TizenSdb.Probe;
 
 // On-device gate: exercises the exact risky paths (TCP + ADB-style RSA AUTH,
 // and the C14N + RSA.SignData re-sign) on Android/MonoVM. Throwaway UI.
-[Activity(Label = "TizenSdb Probe", MainLauncher = true)]
+[Activity(Label = "TizenSdb Probe", MainLauncher = true,
+          Theme = "@android:style/Theme.Material.Light.NoActionBar")]
 public class MainActivity : Activity
 {
     private EditText _ip = null!;
@@ -27,7 +28,8 @@ public class MainActivity : Activity
         SdbTcpDevice.KeyDirectory = FilesDir!.AbsolutePath;
 
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetPadding(24, 24, 24, 24);
+        // Extra top padding clears the status bar (no action bar now).
+        root.SetPadding(24, 96, 24, 24);
 
         _ip = new EditText(this) { Hint = "TV IP e.g. 192.168.1.50" };
         root.AddView(_ip);
