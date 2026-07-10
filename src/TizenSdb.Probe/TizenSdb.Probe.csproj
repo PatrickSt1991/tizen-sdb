@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<!-- Throwaway on-device gate: proves the engine's TCP+RSA-AUTH and the
 		     C14N/RSA re-sign actually RUN on Android/MonoVM. Not the real app. -->
-		<TargetFramework>net9.0-android</TargetFramework>
+		<TargetFramework>net10.0-android</TargetFramework>
 		<SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
 		<OutputType>Exe</OutputType>
 		<Nullable>enable</Nullable>
