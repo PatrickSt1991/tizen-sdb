@@ -24,6 +24,9 @@ public class MainActivity : Activity
     {
         base.OnCreate(savedInstanceState);
 
+        // Belt-and-suspenders: hide the title/action bar even if the theme didn't.
+        ActionBar?.Hide();
+
         // Mobile has no ~/.sdb; keep the auth key in the app sandbox.
         SdbTcpDevice.KeyDirectory = FilesDir!.AbsolutePath;
 
