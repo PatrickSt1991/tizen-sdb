@@ -12,6 +12,24 @@
 		     reusable library's. WarningsAsErrors is also intentionally dropped — it
 		     belongs on the app, and would turn Android CA1416 platform warnings into
 		     build errors. -->
+
+		<!-- NuGet packaging. Consumed by Apps2Samsung.Mobile (net10.0-android) for the
+		     in-process ISdbEngine, and available to any host wanting the engine as a lib.
+		     The package ships BOTH TFM assets: net10.0-android carries the Android-specific
+		     cert/socket branches (SdbTcpDevice, TizenWgtSigner), so an Android consumer must
+		     resolve that asset — a plain net10.0 fallback would miss it. Version is supplied
+		     by CI (-p:Version=…, from the release tag); 0.0.0 is only a local-build default. -->
+		<IsPackable>true</IsPackable>
+		<PackageId>TizenSdb.Core</PackageId>
+		<Version>0.0.0</Version>
+		<Authors>PatrickSt1991</Authors>
+		<Description>Portable C# engine for the Tizen SDB protocol: connect to Samsung Tizen TVs, query capability/DUID, sign/re-sign .wgt packages, and install/uninstall apps. The reusable core behind the TizenSdb CLI and the Apps2Samsung app.</Description>
+		<PackageTags>tizen;samsung;sdb;wgt;smart-tv;sideload</PackageTags>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/PatrickSt1991/tizen-sdb</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/PatrickSt1991/tizen-sdb</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- Used only for XML canonicalization transforms (C14N) in TizenWgtSigner;

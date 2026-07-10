@@ -1,0 +1,75 @@
+name: Publish TizenSdb.Core to NuGet
+
+# Packs and pushes the TizenSdb.Core library to NuGet.org. Runs on the same v* tags
+# as the CLI release (so the package version tracks the engine release), or manually
+# with an explicit version. Requires a NUGET_API_KEY repo secret.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version without leading v (example: 1.2.3). Required for manual runs.'
+        required: true
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  CSPROJ: 'src/TizenSdb.Core/TizenSdb.Core.csproj'
+
+jobs:
+  publish:
+    name: Pack & push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          if [[ -z "$VERSION" ]]; then
+            echo "No version resolved (manual run needs the 'version' input)." >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing TizenSdb.Core ${VERSION}"
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # The package ships a net10.0-android asset, so the runner needs the android workload
+      # to build/pack that TFM. (A library needs 'android', not the full 'maui-android'.)
+      - name: Install android workload
+        run: dotnet workload install android
+
+      - name: Pack
+        run: dotnet pack "${{ env.CSPROJ }}" -c Release -p:Version=${{ steps.ver.outputs.version }} -o "${{ github.workspace }}/nupkg"
+
+      - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [[ -z "$NUGET_API_KEY" ]]; then
+            echo "NUGET_API_KEY secret is not set — add it in the repo settings before publishing." >&2
+            exit 1
+          fi
+          dotnet nuget push "${{ github.workspace }}/nupkg/*.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
