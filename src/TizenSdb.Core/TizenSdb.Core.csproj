@@ -3,6 +3,10 @@
 		<!-- Portable engine: builds for desktop hosts (CLI, Apps2Samsung) and the
 		     Android MAUI head. Add net9.0-ios later for the iOS head (Appendix B). -->
 		<TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+		<!-- The CLI/exe release restores this project for a desktop RID; -p:DesktopOnly=true drops the
+		     android TFM so the release runners don't need the Android workload. The NuGet pack leaves it
+		     unset, so the package still ships both TFM assets. -->
+		<TargetFrameworks Condition="'$(DesktopOnly)' == 'true'">net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<InvariantGlobalization>true</InvariantGlobalization>
