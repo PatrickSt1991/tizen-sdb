@@ -65,7 +65,14 @@ public class TizenInstaller
         if (string.IsNullOrEmpty(_packagePath))
             throw new InvalidOperationException("Package path not set.");
 
-        string remotePath = $"{_sdkToolPath}/{Path.GetFileName(_packagePath)}";
+        // Native .tpk packages install through Samsung's native temp; the web-app temp
+        // (_sdkToolPath, e.g. /opt/usr/apps/tmp) only accepts .wgt — the TV's sdbd rejects a .tpk
+        // there ("You cannot push files to this path"). Confirmed via `sdb install`, which pushes
+        // .tpk to /home/owner/share/tmp/sdk_tools.
+        string remoteDir = Path.GetExtension(_packagePath).Equals(".tpk", StringComparison.OrdinalIgnoreCase)
+            ? "/home/owner/share/tmp/sdk_tools"
+            : _sdkToolPath;
+        string remotePath = $"{remoteDir}/{Path.GetFileName(_packagePath)}";
 
         string appId = await FindPackageId();
 
