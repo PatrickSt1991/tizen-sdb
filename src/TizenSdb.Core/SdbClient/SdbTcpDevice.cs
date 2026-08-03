@@ -39,6 +39,38 @@ public class SdbTcpDevice : ISdbDevice
     {
         if (_transport != null) return; // already connected
 
+        // Samsung sdbd sometimes closes a freshly opened connection mid-handshake (surfaces as
+        // "Remote closed stream while reading"), typically right after a previous connection to the
+        // same device was torn down. The command never runs — it dies in the CNXN/AUTH exchange — so
+        // retry the whole handshake on a fresh socket a few times before giving up.
+        const int maxAttempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await ConnectOnceAsync(ct).ConfigureAwait(false);
+                return;
+            }
+            catch when (attempt < maxAttempts && !ct.IsCancellationRequested)
+            {
+                await CleanupPartialConnectAsync().ConfigureAwait(false);
+                await Task.Delay(400, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // Tears down a half-open connection between handshake attempts. The read pump isn't started
+    // until the handshake succeeds, so there's nothing to cancel — just drop the socket/transport.
+    private async Task CleanupPartialConnectAsync()
+    {
+        try { if (_transport != null) await _transport.DisposeAsync().ConfigureAwait(false); } catch { /* best-effort */ }
+        _transport = null;
+        try { _tcp?.Dispose(); } catch { /* best-effort */ }
+        _tcp = null;
+    }
+
+    private async Task ConnectOnceAsync(CancellationToken ct = default)
+    {
         _tcp = new TcpClient();
         using var linkCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         linkCts.CancelAfter(TimeSpan.FromSeconds(10));
