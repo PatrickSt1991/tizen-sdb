@@ -483,6 +483,14 @@ public class SdbTcpDevice : ISdbDevice
         if (_transport == null) throw new InvalidOperationException("Not connected");
         await _transport.WriteFrameAsync(frame, ct).ConfigureAwait(false);
     }
+
+    public async Task<IAsyncDisposable> ForwardAsync(int localPort, int remotePort, CancellationToken ct = default)
+    {
+        var session = new SdbForwardSession(this, localPort, remotePort);
+        await session.StartAsync(ct).ConfigureAwait(false);
+        return session;
+    }
+
     public async Task PullAsync(string remotePath, Stream localDestination, IProgress<double>? progress = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(localDestination);
@@ -564,6 +572,11 @@ public class SdbTcpDevice : ISdbDevice
                                 {
                                     // complete the TCS with the channel
                                     tcs.TrySetResult(ch);
+                                }
+                                else
+                                {
+                                    // this OKAY is an acknowledgement for a WRTE frame
+                                    ch.NotifyOkay();
                                 }
                             }
                             // No local channel present; ignore or optionally send CLSE
