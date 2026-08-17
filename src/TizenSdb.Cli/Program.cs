@@ -447,7 +447,7 @@ public static class Program
         var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
         await device.ConnectAsync();
 
-        var result = await device.ShellCommandAsync($"shell:{command}");
+        var result = await device.ShellCommandAsync(command);
 
         Console.WriteLine("--- Command Output ---");
         Console.WriteLine(result);
