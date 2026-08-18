@@ -7,6 +7,7 @@ public sealed class SdbChannel : IAsyncDisposable
     private readonly SdbTcpDevice _device;
     private readonly Channel<byte[]> _incoming = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
     private readonly SemaphoreSlim _writeSem = new(1, 1);
+    private readonly SemaphoreSlim _okaySem = new(0, 1);
     private bool _closed;
     private int _readCursor;
     private byte[]? _currentChunk;
@@ -25,6 +26,14 @@ public sealed class SdbChannel : IAsyncDisposable
     internal void EnqueueIncoming(byte[] bytes)
     {
         if (!_incoming.Writer.TryWrite(bytes)) { /* drop? */ }
+    }
+
+    internal void NotifyOkay()
+    {
+        if (_okaySem.CurrentCount == 0 && !_closed)
+        {
+            _okaySem.Release();
+        }
     }
 
     public async Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
@@ -48,6 +57,9 @@ public sealed class SdbChannel : IAsyncDisposable
                     Payload = chunk
                 };
                 await _device.WriteFrameAsync(frame, ct).ConfigureAwait(false);
+                
+                // Wait for OKAY acknowledgement from the device
+                await _okaySem.WaitAsync(ct).ConfigureAwait(false);
             }
             finally
             {
@@ -127,11 +139,17 @@ public sealed class SdbChannel : IAsyncDisposable
         // signal readers
         _incoming.Writer.TryWrite([]);
         _incoming.Writer.Complete();
+        // release pending writes
+        if (_okaySem.CurrentCount == 0)
+        {
+            _okaySem.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         await CloseAsync().ConfigureAwait(false);
         _writeSem.Dispose();
+        _okaySem.Dispose();
     }
 }

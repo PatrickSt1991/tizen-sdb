@@ -153,6 +153,71 @@ public static class Program
                     await ResignPackage(commandArgs[0], commandArgs[1], commandArgs[2], commandArgs[3]);
                     break;
 
+                case "forward":
+                    var forwardArgs = commandArgs.ToList();
+
+                    if (forwardArgs.Count == 0)
+                    {
+                        Console.WriteLine("error: too few arguments");
+                        Console.WriteLine("info: sdb forward <local> <remote>");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    if (forwardArgs.Count == 1) // Only IP provided
+                    {
+                        Console.WriteLine("error: unsupported transmission protocol");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    if (forwardArgs.Count == 2) // IP and <local> provided, missing <remote>
+                    {
+                        Console.WriteLine("error: unsupported transmission protocol");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    string localArg = forwardArgs[1];
+                    string remoteArg = forwardArgs[2];
+
+                    if (!localArg.StartsWith("tcp:") || localArg == "tcp:")
+                    {
+                        Console.WriteLine("error: unsupported transmission protocol");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    if (!remoteArg.StartsWith("tcp:"))
+                    {
+                        Console.WriteLine("error: unsupported transmission protocol");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    string localPortStr = localArg.Substring(4);
+                    string remotePortStr = remoteArg.Substring(4);
+
+                    if (string.IsNullOrEmpty(remotePortStr))
+                    {
+                        Console.WriteLine("error: invalid port ''");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    if (!int.TryParse(localPortStr, out int localPort))
+                    {
+                        Console.WriteLine($"error: invalid port '{localPortStr}'");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    if (!int.TryParse(remotePortStr, out int remotePort))
+                    {
+                        Console.WriteLine($"error: invalid port '{remotePortStr}'");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    await ForwardPort(forwardArgs[0], localPort, remotePort);
+                    break;
+
                 default:
                     Console.WriteLine($"Error: Unknown command '{command}'");
                     PrintUsage();
@@ -517,6 +582,43 @@ public static class Program
             Environment.Exit(1);
         }
     }
+
+    static async Task ForwardPort(string ip, int localPort, int remotePort)
+    {
+        try
+        {
+            var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+            await device.ConnectAsync();
+
+            // Proactively verify if the remote port is actually listening
+            try
+            {
+                var testChannel = await device.OpenAsync($"tcp:{remotePort}\0");
+                await testChannel.DisposeAsync();
+            }
+            catch
+            {
+                // Remote port is invalid or TV rejected the connection
+                return;
+            }
+
+            await using var session = await device.ForwardAsync(localPort, remotePort);
+            
+            var tcs = new TaskCompletionSource();
+            Console.CancelKeyPress += (s, e) =>
+            {
+                e.Cancel = true;
+                tcs.TrySetResult();
+            };
+            var sessionTask = (session as SdbForwardSession)?.Completion ?? Task.CompletedTask;
+            await Task.WhenAny(tcs.Task, sessionTask);
+        }
+        catch
+        {
+            // Fail silently on error to match sdb behavior
+        }
+    }
+
     static void PrintUsage()
     {
         Console.WriteLine("TizenSdb - Lightweight Tizen SDB Client");
@@ -535,5 +637,6 @@ public static class Program
         Console.WriteLine("  capability <device_ip>                        Show device capabilities");
         Console.WriteLine("  resign <pkg_path> <author> <distrib> <pass>   Resign a TPK/WGT package");
         Console.WriteLine("  launch <device_ip> <app_id>                   Start an app on the TV");
+        Console.WriteLine("  forward <device_ip> tcp:<local_port> tcp:<remote_port> Forward a local TCP port to a device port");
     }
 }
