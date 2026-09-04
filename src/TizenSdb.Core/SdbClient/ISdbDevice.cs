@@ -12,4 +12,5 @@ public interface ISdbDevice : IAsyncDisposable
     Task PushAsync(Stream localStream, string remotePath, IProgress<double>? progress = null, CancellationToken ct = default);
     Task PullAsync(string remotePath, Stream localDestination, IProgress<double>? progress = null, CancellationToken ct = default);
     Task<IAsyncDisposable> ForwardAsync(int localPort, int remotePort, CancellationToken ct = default);
+    Task<IReadOnlyList<SdbVerbProbeResult>> ProbeShellVerbsAsync(IEnumerable<string>? commands = null, CancellationToken ct = default);
 }

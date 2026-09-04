@@ -72,6 +72,16 @@ public static class Program
                     await DiagnoseDevice(commandArgs[0]);
                     break;
 
+                case "probe-verbs":
+                    if (commandArgs.Length != 1)
+                    {
+                        Console.WriteLine("Error: 'probe-verbs' requires a device IP address.");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    await ProbeShellVerbs(commandArgs[0]);
+                    break;
+
                 case "apps":
                     if (commandArgs.Length != 1)
                     {
@@ -505,6 +515,30 @@ public static class Program
 
         device.DisposeAsync();
     }
+    // Which `0 …` verbs this TV's sdbd recognises. Samsung's sdbd is a fixed vocabulary, not a shell,
+    // and an unknown verb answers with nothing (or "closed"), so the vocabulary can be enumerated
+    // without touching anything: every probe carries an id that does not exist.
+    static async Task ProbeShellVerbs(string ip)
+    {
+        Console.WriteLine($"* Probing sdbd verbs on {ip} ({SdbShellVerbs.Candidates.Count} candidates, nothing is changed on the TV)...");
+
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        await device.ConnectAsync();
+        try
+        {
+            var results = await device.ProbeShellVerbsAsync();
+            foreach (var result in results)
+                Console.WriteLine(SdbShellVerbs.Format(result));
+
+            var accepted = results.Where(r => r.Accepted).Select(r => r.Command.Split(' ')[0] == "0" ? string.Join(' ', r.Command.Split(' ').Take(2)) : r.Command.Split(' ')[0]).Distinct().ToList();
+            Console.WriteLine($"* Accepted verbs: {(accepted.Count == 0 ? "none" : string.Join(", ", accepted))}");
+        }
+        finally
+        {
+            await device.DisposeAsync();
+        }
+    }
+
     static async Task ExecuteShellCommand(string ip, string command)
     {
         Console.WriteLine($"* Executing on {ip}: {command}");
@@ -627,6 +661,7 @@ public static class Program
         Console.WriteLine("  connect <device_ip>                           Connect to a Tizen device");
         Console.WriteLine("  disconnect <device_ip>                        Disconnect from a Tizen device");
         Console.WriteLine("  diagnose <device_ip>                          Diagnose device connectivity and commands");
+        Console.WriteLine("  probe-verbs <device_ip>                       List which sdbd shell verbs the TV recognises");
         Console.WriteLine("  devices                                       List connected devices");
         Console.WriteLine("  apps <device_ip>                              List installed applications");
         Console.WriteLine("  duid <device_ip>                              Get device unique ID");
