@@ -887,4 +887,37 @@ public class SdbTcpDevice : ISdbDevice
 
         await ShellCommandAsync($"0 was_execute {appId}", ct);
     }
+
+    /// <summary>
+    /// Asks the TV's sdbd which of <paramref name="commands"/> (default: <see cref="SdbShellVerbs.Candidates"/>)
+    /// it recognises, one at a time. Nothing in the default list changes anything on the TV. A
+    /// transport error on one probe is recorded against that probe and the rest still run.
+    /// </summary>
+    public async Task<IReadOnlyList<SdbVerbProbeResult>> ProbeShellVerbsAsync(
+        IEnumerable<string>? commands = null, CancellationToken ct = default)
+    {
+        var results = new List<SdbVerbProbeResult>();
+        foreach (var command in commands ?? SdbShellVerbs.Candidates)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var reply = (await ShellCommandAsync(command, ct).ConfigureAwait(false)).Trim();
+                results.Add(new SdbVerbProbeResult(command, SdbShellVerbs.IsAccepted(reply), reply));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                results.Add(new SdbVerbProbeResult(command, false, $"error: {ex.Message}"));
+            }
+
+            // sdbd on some builds drops a channel opened straight after the previous one closed.
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+
+        return results;
+    }
 }
