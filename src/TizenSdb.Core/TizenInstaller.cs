@@ -72,7 +72,13 @@ public class TizenInstaller
         string remoteDir = Path.GetExtension(_packagePath).Equals(".tpk", StringComparison.OrdinalIgnoreCase)
             ? "/home/owner/share/tmp/sdk_tools"
             : _sdkToolPath;
-        string remotePath = $"{remoteDir}/{Path.GetFileName(_packagePath)}";
+        // sdbd parses `0 vd_appinstall {appId} {remotePath}` as whitespace-separated tokens with no
+        // quoting. A local name like "foo (1).wgt" would become the remote basename and split the
+        // install command. Push uses the sync protocol (spaces fine); keep the remote basename clean.
+        string remoteFile = Path.GetFileName(_packagePath);
+        if (remoteFile.IndexOfAny([' ', '\t']) >= 0)
+            remoteFile = "install-package" + Path.GetExtension(_packagePath);
+        string remotePath = $"{remoteDir}/{remoteFile}";
 
         string appId = await FindPackageId();
 
