@@ -132,6 +132,16 @@ public static class Program
                     await UninstallPackage(commandArgs[0], commandArgs[1]);
                     break;
 
+                case "rmfile":
+                    if (commandArgs.Length != 1)
+                    {
+                        Console.WriteLine("Error: 'rmfile' requires an IP address.");
+                        Environment.Exit(1);
+                        return;
+                    }
+                    await RemoveStagedPackages(commandArgs[0]);
+                    break;
+
                 case "shell":
                     if (commandArgs.Length < 2)
                     {
@@ -539,6 +549,25 @@ public static class Program
         }
     }
 
+    // Empties the TV's install staging directory (sdk_tools) — what `install` now does on its own
+    // at the end, for packages left behind by older builds or by a push that never got installed.
+    static async Task RemoveStagedPackages(string ip)
+    {
+        Console.WriteLine($"* Clearing the install staging directory on {ip} ({SdbShellVerbs.RemoveStagedPackages})...");
+
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        await device.ConnectAsync();
+        try
+        {
+            var reply = await device.RemoveStagedPackagesAsync();
+            Console.WriteLine(reply.Length > 0 ? $"  TV replied: {reply}" : "* Done (the TV gave no reply, as it does for this verb).");
+        }
+        finally
+        {
+            await device.DisposeAsync();
+        }
+    }
+
     static async Task ExecuteShellCommand(string ip, string command)
     {
         Console.WriteLine($"* Executing on {ip}: {command}");
@@ -668,6 +697,7 @@ public static class Program
         Console.WriteLine("  install <device_ip> <path_to_tpk/wgt>         Install a package");
         Console.WriteLine("  permit-install <device_ip> <path_to_xml>      Send device-profile.xml to device");
         Console.WriteLine("  uninstall <device_ip> <package_id>            Uninstall a package");
+        Console.WriteLine("  rmfile <device_ip>                            Delete packages left in the TV's install staging directory");
         Console.WriteLine("  shell <device_ip> <command>                   Execute a shell command on the device");
         Console.WriteLine("  capability <device_ip>                        Show device capabilities");
         Console.WriteLine("  resign <pkg_path> <author> <distrib> <pass>   Resign a TPK/WGT package");
