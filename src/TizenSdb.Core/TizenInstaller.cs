@@ -87,21 +87,6 @@ public class TizenInstaller
 
         await foreach (string line in _sdbClient.ShellCommandLinesAsync($"0 vd_appinstall {appId} {remotePath}"))
             Console.WriteLine(line);
-
-        // Samsung's sdb ends every install by having sdbd empty its staging directory ("0 rmfile");
-        // otherwise the package just pushed sits on the TV until the next push overwrites it. Best
-        // effort: the install is already decided by the lines above, and hosts classify those lines,
-        // so nothing printed here may look like a verdict — no TV reply, no exception text (both can
-        // carry the word "failed").
-        try
-        {
-            await _sdbClient.RemoveStagedPackagesAsync();
-            Console.WriteLine("Cleared the TV's install staging directory.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Skipped clearing the TV's install staging directory ({ex.GetType().Name}).");
-        }
     }
     private async Task<string> FindPackageId()
     {

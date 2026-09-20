@@ -24,8 +24,8 @@ public static class SdbShellVerbs
     /// expands the verb itself — its own log shows the expansion as <c>rm -f</c> over
     /// <c>sdk_tools/*.tpk</c>, <c>*.wgt</c>, <c>*.rpm</c> and <c>sdk_tools/tmp/*.wgt</c> — so it
     /// takes no argument, cannot be aimed at one file, and touches nothing outside that directory.
-    /// Samsung's own sdb sends it after every install; without it the package just pushed stays on
-    /// the TV until the next push overwrites it.
+    /// Samsung's own sdb sends it after every install; this engine leaves that to the caller, so the
+    /// packages an install pushes stay there until someone sends it.
     /// </summary>
     public const string RemoveStagedPackages = "0 rmfile";
 

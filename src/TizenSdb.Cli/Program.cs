@@ -549,8 +549,8 @@ public static class Program
         }
     }
 
-    // Empties the TV's install staging directory (sdk_tools) — what `install` now does on its own
-    // at the end, for packages left behind by older builds or by a push that never got installed.
+    // Empties the TV's install staging directory (sdk_tools): the packages every install pushes
+    // there and leaves behind. On demand only; `install` itself does not send it.
     static async Task RemoveStagedPackages(string ip)
     {
         Console.WriteLine($"* Clearing the install staging directory on {ip} ({SdbShellVerbs.RemoveStagedPackages})...");
