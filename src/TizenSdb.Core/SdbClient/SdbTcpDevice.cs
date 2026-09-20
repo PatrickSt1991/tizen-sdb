@@ -889,6 +889,13 @@ public class SdbTcpDevice : ISdbDevice
     }
 
     /// <summary>
+    /// Deletes every package left in the TV's install staging directory (<see cref="SdbShellVerbs.RemoveStagedPackages"/>).
+    /// Returns the TV's reply, trimmed; a set whose sdbd lacks the verb answers with nothing.
+    /// </summary>
+    public async Task<string> RemoveStagedPackagesAsync(CancellationToken ct = default) =>
+        (await ShellCommandAsync(SdbShellVerbs.RemoveStagedPackages, ct).ConfigureAwait(false)).Trim();
+
+    /// <summary>
     /// Asks the TV's sdbd which of <paramref name="commands"/> (default: <see cref="SdbShellVerbs.Candidates"/>)
     /// it recognises, one at a time. Nothing in the default list changes anything on the TV. A
     /// transport error on one probe is recorded against that probe and the rest still run.
