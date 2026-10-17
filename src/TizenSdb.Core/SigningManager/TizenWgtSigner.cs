@@ -29,9 +29,10 @@ namespace TizenSdb.SigningManager
             var distributorLeaf = LoadCert(distributorPfxPath, password);
 
             // Load full collections (leaf + intermediates).
-            // Android (MonoVM) has no user/machine keystore, so load exportable/in-memory
-            // like Windows; DefaultKeySet is only right for desktop macOS/Linux.
-            var importFlags = (OperatingSystem.IsAndroid() || RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            // Mobile hosts (Android's MonoVM, the iOS/Mac Catalyst sandbox) have no user/machine
+            // keystore, so load exportable/in-memory like Windows; DefaultKeySet is only right
+            // for desktop macOS/Linux.
+            var importFlags = (IsMobileHost || RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 ? X509KeyStorageFlags.Exportable
                 : X509KeyStorageFlags.DefaultKeySet;
 
@@ -68,12 +69,21 @@ namespace TizenSdb.SigningManager
             return wgtPath;
         }
 
+        /// <summary>
+        /// Hosts without a user/machine certificate store: Android (MonoVM) and Apple's mobile
+        /// sandboxes. Runtime checks rather than TFMs on purpose, so the plain net10.0 package
+        /// asset serves the iOS head without an ios build of this library.
+        /// </summary>
+        private static bool IsMobileHost =>
+            OperatingSystem.IsAndroid() || OperatingSystem.IsIOS() || OperatingSystem.IsMacCatalyst() || OperatingSystem.IsTvOS();
+
         private static X509Certificate2 LoadCert(string pfxPath, string password)
         {
-            if (OperatingSystem.IsAndroid())
+            if (IsMobileHost)
             {
-                // Android (MonoVM): load in-memory only. PersistKeySet/UserKeySet
-                // (the desktop-Unix path) targets an OS keystore Android doesn't have.
+                // Android (MonoVM) and iOS/Mac Catalyst: load in-memory only. The default flags
+                // used on desktop Unix below import into an OS keystore/keychain, which Android
+                // doesn't have and the iOS app sandbox doesn't allow.
                 return new X509Certificate2(
                     pfxPath, password,
                     X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable);
@@ -97,7 +107,7 @@ namespace TizenSdb.SigningManager
             }
             else
             {
-                // macOS/Linux: just load in-memory
+                // Desktop macOS/Linux: default key set (macOS uses a temporary keychain).
                 return new X509Certificate2(pfxPath, password);
             }
         }
