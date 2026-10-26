@@ -30,11 +30,14 @@ namespace TizenSdb.SigningManager
 
             // Load full collections (leaf + intermediates).
             // Mobile hosts (Android's MonoVM, the iOS/Mac Catalyst sandbox) have no user/machine
-            // keystore, so load exportable/in-memory like Windows; DefaultKeySet is only right
-            // for desktop macOS/Linux.
-            var importFlags = (IsMobileHost || RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                ? X509KeyStorageFlags.Exportable
-                : X509KeyStorageFlags.DefaultKeySet;
+            // keystore, so load in-memory; DefaultKeySet is only right for desktop macOS/Linux.
+            // Apple's mobile platforms reject Exportable (and PersistKeySet) outright, so they get
+            // EphemeralKeySet alone; only the leaf's private key is used, and never exported.
+            var importFlags = IsAppleMobileHost
+                ? X509KeyStorageFlags.EphemeralKeySet
+                : (OperatingSystem.IsAndroid() || RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    ? X509KeyStorageFlags.Exportable
+                    : X509KeyStorageFlags.DefaultKeySet;
 
             var authorColl = new X509Certificate2Collection();
             authorColl.Import(authorPfxPath, password, importFlags);
@@ -75,15 +78,29 @@ namespace TizenSdb.SigningManager
         /// asset serves the iOS head without an ios build of this library.
         /// </summary>
         private static bool IsMobileHost =>
-            OperatingSystem.IsAndroid() || OperatingSystem.IsIOS() || OperatingSystem.IsMacCatalyst() || OperatingSystem.IsTvOS();
+            OperatingSystem.IsAndroid() || IsAppleMobileHost;
+
+        /// <summary>
+        /// iOS, Mac Catalyst and tvOS: their PKCS#12 loader throws PlatformNotSupportedException on
+        /// Exportable and PersistKeySet ("The PKCS#12 Exportable flag is not supported on this
+        /// platform"), unlike Android and desktop macOS.
+        /// </summary>
+        private static bool IsAppleMobileHost =>
+            OperatingSystem.IsIOS() || OperatingSystem.IsMacCatalyst() || OperatingSystem.IsTvOS();
 
         private static X509Certificate2 LoadCert(string pfxPath, string password)
         {
+            if (IsAppleMobileHost)
+            {
+                // In-memory, and without Exportable, which these platforms refuse. Signing only
+                // needs the key handle (GetRSAPrivateKey), never an export.
+                return new X509Certificate2(pfxPath, password, X509KeyStorageFlags.EphemeralKeySet);
+            }
+
             if (IsMobileHost)
             {
-                // Android (MonoVM) and iOS/Mac Catalyst: load in-memory only. The default flags
-                // used on desktop Unix below import into an OS keystore/keychain, which Android
-                // doesn't have and the iOS app sandbox doesn't allow.
+                // Android (MonoVM): load in-memory only. The default flags used on desktop Unix
+                // below import into an OS keystore, which Android doesn't have.
                 return new X509Certificate2(
                     pfxPath, password,
                     X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable);
