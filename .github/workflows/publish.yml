@@ -36,7 +36,7 @@ jobs:
           - rid: osx-x64
             runner: macos-15-intel
           - rid: osx-arm64
-            runner: macos-14
+            runner: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
