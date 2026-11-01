@@ -6,8 +6,19 @@ namespace tizensdb;
 
 public static class Program
 {
+    // sdbd's default port. A --port flag (or --port=N) anywhere in the args overrides it, so the CLI
+    // can reach sdbd through the TV-Store relay (Apps2Samsung/TV-Store#52) instead of only 26101.
+    static int Port = 26101;
+
     public static async Task Main(string[] args)
     {
+        if (!TryExtractPort(ref args, out var portError))
+        {
+            Console.WriteLine(portError);
+            Environment.Exit(1);
+            return;
+        }
+
         if (args.Length == 0)
         {
             PrintUsage();
@@ -254,12 +265,47 @@ public static class Program
         }
     }
 
+    // Pull "--port N" or "--port=N" out of the args wherever it appears, validate it, and leave the
+    // positional command and its arguments untouched. No flag keeps the default 26101.
+    static bool TryExtractPort(ref string[] args, out string error)
+    {
+        error = "";
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            var a = args[i];
+            string? value = null;
+            if (a == "--port")
+            {
+                if (i + 1 >= args.Length) { error = "error: --port needs a number"; return false; }
+                value = args[++i];
+            }
+            else if (a.StartsWith("--port="))
+            {
+                value = a.Substring("--port=".Length);
+            }
+            else
+            {
+                rest.Add(a);
+                continue;
+            }
+            if (!int.TryParse(value, out int p) || p < 1 || p > 65535)
+            {
+                error = $"error: invalid port '{value}' (expected 1-65535)";
+                return false;
+            }
+            Port = p;
+        }
+        args = rest.ToArray();
+        return true;
+    }
+
     static async Task ConnectDevice(string ip)
     {
-        Console.WriteLine($"* Connecting to {ip}:26101...");
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        Console.WriteLine($"* Connecting to {ip}:{Port}...");
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
-        Console.WriteLine($"connected to {ip}:26101");
+        Console.WriteLine($"connected to {ip}:{Port}");
 
         // Test connection
         try
@@ -281,7 +327,7 @@ public static class Program
     }
     static async Task<string> GetDeviceUid(string ip)
     {
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         try
@@ -306,7 +352,7 @@ public static class Program
     {
         Console.WriteLine($"* Listing installed apps on {ip}...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         // Try multiple command formats
@@ -388,7 +434,7 @@ public static class Program
 
         Console.WriteLine($"* Installing {Path.GetFileName(packagePath)} on {ip} at location {sdkToolPath}...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         var installer = new TizenInstaller(packagePath, device, sdkToolPath);
@@ -415,7 +461,7 @@ public static class Program
 
         Console.WriteLine($"* Pushing {Path.GetFileName(packagePath)} to {ip} at location {sdkToolPath}...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         var installer = new TizenInstaller(packagePath, device, sdkToolPath);
@@ -429,7 +475,7 @@ public static class Program
     {
         Console.WriteLine($"* Uninstalling {packageId} from {ip}...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         try
@@ -485,7 +531,7 @@ public static class Program
     {
         Console.WriteLine($"* Diagnosing device {ip}...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         // Test basic commands that should work
@@ -532,7 +578,7 @@ public static class Program
     {
         Console.WriteLine($"* Probing sdbd verbs on {ip} ({SdbShellVerbs.Candidates.Count} candidates, nothing is changed on the TV)...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
         try
         {
@@ -555,7 +601,7 @@ public static class Program
     {
         Console.WriteLine($"* Clearing the install staging directory on {ip} ({SdbShellVerbs.RemoveStagedPackages})...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
         try
         {
@@ -572,7 +618,7 @@ public static class Program
     {
         Console.WriteLine($"* Executing on {ip}: {command}");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         var result = await device.ShellCommandAsync(command);
@@ -586,7 +632,7 @@ public static class Program
     {
         Console.WriteLine($"* Getting capabilities for {ip}...");
 
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         var capabilities = await device.CapabilityAsync();
@@ -601,7 +647,7 @@ public static class Program
     }
     static async Task GetDeviceName(string ip)
     {
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
         string[] parts = device.DeviceId.Split("::", StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length >= 2)
@@ -614,7 +660,7 @@ public static class Program
     static async Task LaunchApp(string ip, string appId)
     {
         Console.WriteLine($"* Connecting to {ip}...");
-        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+        var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
         await device.ConnectAsync();
 
         Console.WriteLine($"* Launching app {appId}...");
@@ -650,7 +696,7 @@ public static class Program
     {
         try
         {
-            var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip));
+            var device = new SdbTcpDevice(System.Net.IPAddress.Parse(ip), Port);
             await device.ConnectAsync();
 
             // Proactively verify if the remote port is actually listening
@@ -686,6 +732,8 @@ public static class Program
     {
         Console.WriteLine("TizenSdb - Lightweight Tizen SDB Client");
         Console.WriteLine("Usage: TizenSdb_v*.*.*.exe [command] [options]");
+        Console.WriteLine("\nOptions:");
+        Console.WriteLine("  --port <n>                                    sdbd port to connect to (default 26101; use the TV-Store relay port)");
         Console.WriteLine("\nCommands:");
         Console.WriteLine("  connect <device_ip>                           Connect to a Tizen device");
         Console.WriteLine("  disconnect <device_ip>                        Disconnect from a Tizen device");
